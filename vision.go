@@ -12,31 +12,22 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
-const (
-	targetRed    = 0
-	targetOrange = 27
-	targetYellow = 53
-	targetGreen  = 132
-	targetBlue   = 210
-	targetPurple = 298
-)
-
-func parseBoard() ([8][8]GemColor, []string) {
+func (b *Bot) parseBoard() ([8][8]GemColor, []string) {
 	var grid [8][8]GemColor
 	var logs []string
 	sampleSize := 64
 
-	startX := boardAnchorX - (sampleSize / 2)
-	startY := boardAnchorY - (sampleSize / 2)
-	width := int(float64(7)*stepX) + sampleSize
-	height := int(float64(7)*stepY) + sampleSize
+	startX := b.AnchorX - (sampleSize / 2)
+	startY := b.AnchorY - (sampleSize / 2)
+	width := int(float64(7)*b.StepX) + sampleSize
+	height := int(float64(7)*b.StepY) + sampleSize
 
 	fullBoardImg, _ := robotgo.CaptureImg(startX, startY, width, height)
 
-	for r := range 8 {
-		for c := range 8 {
-			centerX := boardAnchorX + int(float64(c)*stepX)
-			centerY := boardAnchorY + int(float64(r)*stepY)
+	for r := 0; r < 8; r++ {
+		for c := 0; c < 8; c++ {
+			centerX := b.AnchorX + int(float64(c)*b.StepX)
+			centerY := b.AnchorY + int(float64(r)*b.StepY)
 
 			detected, logMsg := analyzeGem(fullBoardImg, startX, startY, centerX, centerY, sampleSize, r, c)
 
@@ -93,7 +84,6 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 	avgH, avgS, avgV := rgbToHSV(avgR, avgG, avgB)
 
 	var maxRealCount int
-
 	for color, count := range counts {
 		if color != Empty && color != White && count > maxRealCount {
 			maxRealCount = count
@@ -105,49 +95,21 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 	if counts[White] > maxRealCount*2 {
 		intendedColor = White
 	} else {
-		scoreYellow := counts[Yellow]
-		scoreOrange := counts[Orange]
-		scoreRed := counts[Red]
-		scorePurple := counts[Purple]
-		scoreBlue := counts[Blue]
-		scoreGreen := counts[Green]
-
 		bestScore := 0
-		var bestColor = Empty
+		intendedColor = Empty
+		standardColors := []GemColor{Red, Orange, Yellow, Green, Blue, Purple}
 
-		if scoreYellow > bestScore {
-			bestScore = scoreYellow
-			bestColor = Yellow
+		for _, color := range standardColors {
+			if counts[color] > bestScore {
+				bestScore = counts[color]
+				intendedColor = color
+			}
 		}
-		if scoreOrange > bestScore {
-			bestScore = scoreOrange
-			bestColor = Orange
-		}
-		if scoreRed > bestScore {
-			bestScore = scoreRed
-			bestColor = Red
-		}
-		if scorePurple > bestScore {
-			bestScore = scorePurple
-			bestColor = Purple
-		}
-		if scoreBlue > bestScore {
-			bestScore = scoreBlue
-			bestColor = Blue
-		}
-		if scoreGreen > bestScore {
-			bestScore = scoreGreen
-			bestColor = Green
-		}
-
-		intendedColor = bestColor
 	}
 
 	var detected GemColor
 	thresholdEmpty := int(float64(pixelCount) * 0.78)
 
-	// SIMPLIFIED DECISION TREE
-	// If the cell is mostly background tiles, it's Empty. Otherwise, trust the intended color.
 	if counts[Empty] >= thresholdEmpty {
 		detected = Empty
 	} else {
@@ -168,10 +130,19 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 }
 
 func closestColorByHue(hue int) GemColor {
+	targets := map[GemColor]int{
+		Red:    0,
+		Orange: 27,
+		Yellow: 53,
+		Green:  132,
+		Blue:   210,
+		Purple: 298,
+	}
+
 	bestColor := Empty
 	smallestDist := 360
 
-	check := func(targetHue int, color GemColor) {
+	for color, targetHue := range targets {
 		dist := int(math.Abs(float64(hue - targetHue)))
 		if dist > 180 {
 			dist = 360 - dist
@@ -182,13 +153,6 @@ func closestColorByHue(hue int) GemColor {
 			bestColor = color
 		}
 	}
-
-	check(targetRed, Red)
-	check(targetOrange, Orange)
-	check(targetYellow, Yellow)
-	check(targetGreen, Green)
-	check(targetBlue, Blue)
-	check(targetPurple, Purple)
 
 	return bestColor
 }
