@@ -20,9 +20,10 @@ const (
 )
 
 type Move struct {
-	Row int
-	Col int
-	Dir string
+	Row      int
+	Col      int
+	Dir      string
+	Priority int
 }
 
 func (g GemColor) String() string {
@@ -70,6 +71,31 @@ func gemToAscii(g GemColor) string {
 		return "\033[37m ✦ \033[0m"
 	case Hypercube:
 		return "\033[30m ■ \033[0m"
+	default:
+		return " ? "
+	}
+}
+
+func gemToPlainText(g GemColor) string {
+	switch g {
+	case Empty:
+		return " . "
+	case Red:
+		return " R "
+	case Orange:
+		return " O "
+	case Yellow:
+		return " Y "
+	case Green:
+		return " G "
+	case Blue:
+		return " B "
+	case Purple:
+		return " P "
+	case White:
+		return " W "
+	case Hypercube:
+		return " H "
 	default:
 		return " ? "
 	}
@@ -184,7 +210,9 @@ func clearMatches(grid *[8][8]GemColor) bool {
 	for r := range 8 {
 		for c := range 8 {
 			if toClear[r][c] {
-				grid[r][c] = Empty
+				for i := r; i >= 0; i-- {
+					grid[i][c] = Empty
+				}
 			}
 		}
 	}
@@ -239,38 +267,110 @@ func checkSwap(grid *[8][8]GemColor, r1, c1, r2, c2 int) bool {
 	return false
 }
 
+func evaluateCellMatch(grid *[8][8]GemColor, r, c int) int {
+	if grid[r][c] == Empty || grid[r][c] == Hypercube {
+		return 99
+	}
+
+	color := grid[r][c]
+
+	left := c
+	for left > 0 && grid[r][left-1] == color {
+		left--
+	}
+	right := c
+	for right < 7 && grid[r][right+1] == color {
+		right++
+	}
+	horiz := right - left + 1
+
+	up := r
+	for up > 0 && grid[up-1][c] == color {
+		up--
+	}
+	down := r
+	for down < 7 && grid[down+1][c] == color {
+		down++
+	}
+	vert := down - up + 1
+
+	is5 := horiz >= 5 || vert >= 5
+	isLOrT := horiz >= 3 && vert >= 3
+	is4 := horiz == 4 || vert == 4
+	is3 := horiz >= 3 || vert >= 3
+
+	if is5 {
+		return 2
+	}
+	if isLOrT {
+		return 3
+	}
+	if is4 {
+		return 4
+	}
+	if is3 {
+		return 5
+	}
+
+	return 99
+}
+
+func calculatePriority(grid [8][8]GemColor, r1, c1, r2, c2 int) int {
+	gem1 := grid[r1][c1]
+	gem2 := grid[r2][c2]
+
+	if gem1 == Hypercube && gem2 == Hypercube {
+		return 1
+	}
+
+	if gem1 == Hypercube || gem2 == Hypercube {
+		return 2
+	}
+
+	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
+
+	p1 := evaluateCellMatch(&grid, r1, c1)
+	p2 := evaluateCellMatch(&grid, r2, c2)
+
+	if p1 < p2 {
+		return p1
+	}
+	return p2
+}
+
 func findAllMoves(grid [8][8]GemColor) []Move {
 	var moves []Move
-
 	gridPtr := &grid
 
-	if clearMatches(gridPtr) {
-		return moves
-	}
+	clearMatches(gridPtr)
 
-	for r := range 8 {
-		for c := range 8 {
-			if gridPtr[r][c] == Empty {
-				return moves
-			}
-		}
-	}
-
-	for r := range 8 {
-		for c := range 8 {
-			if gridPtr[r][c] == Empty {
-				continue
-			}
-
-			if c < 7 && gridPtr[r][c+1] != Empty {
-				if checkSwap(gridPtr, r, c, r, c+1) {
-					moves = append(moves, Move{Row: r, Col: c, Dir: "Right"})
+	for priority := 1; priority <= 5; priority++ {
+		for r := range 8 {
+			for c := range 8 {
+				if gridPtr[r][c] == Empty {
+					continue
 				}
-			}
 
-			if r < 7 && gridPtr[r][c] != Empty && gridPtr[r+1][c] != Empty {
-				if checkSwap(gridPtr, r, c, r+1, c) {
-					moves = append(moves, Move{Row: r, Col: c, Dir: "Down"})
+				if c < 7 && gridPtr[r][c+1] != Empty {
+					gridCopy := *gridPtr
+					if checkSwap(&gridCopy, r, c, r, c+1) {
+						prio := calculatePriority(*gridPtr, r, c, r, c+1)
+						if prio == priority {
+							checkSwap(gridPtr, r, c, r, c+1)
+							moves = append(moves, Move{Row: r, Col: c, Dir: "Right", Priority: prio})
+						}
+					}
+				}
+
+				if r < 7 && gridPtr[r+1][c] != Empty {
+					gridCopy := *gridPtr
+					if checkSwap(&gridCopy, r, c, r+1, c) {
+						prio := calculatePriority(*gridPtr, r, c, r+1, c)
+						if prio == priority {
+							checkSwap(gridPtr, r, c, r+1, c)
+							moves = append(moves, Move{Row: r, Col: c, Dir: "Down", Priority: prio})
+						}
+					}
 				}
 			}
 		}
