@@ -24,19 +24,19 @@ const (
 func parseBoard() ([8][8]GemColor, []string) {
 	var grid [8][8]GemColor
 	var logs []string
-	sampleSize := 16
+	sampleSize := 64
 
 	startX := boardAnchorX - (sampleSize / 2)
 	startY := boardAnchorY - (sampleSize / 2)
 	width := int(float64(7)*stepX) + sampleSize
-	height := int(float64(7)*stepY) + sampleSize + 30
+	height := int(float64(7)*stepY) + sampleSize
 
 	fullBoardImg, _ := robotgo.CaptureImg(startX, startY, width, height)
 
 	for r := range 8 {
 		for c := range 8 {
 			centerX := boardAnchorX + int(float64(c)*stepX)
-			centerY := boardAnchorY + int(float64(r)*stepY) + 15
+			centerY := boardAnchorY + int(float64(r)*stepY)
 
 			detected, logMsg := analyzeGem(fullBoardImg, startX, startY, centerX, centerY, sampleSize, r, c)
 
@@ -45,7 +45,7 @@ func parseBoard() ([8][8]GemColor, []string) {
 		}
 	}
 
-	saveDebugData(fullBoardImg, grid, logs)
+	// saveDebugData(fullBoardImg, grid, logs)
 
 	return grid, logs
 }
@@ -60,8 +60,10 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 	maxY := minY + sampleSize
 
 	counts := make(map[GemColor]int)
-
 	var totalR, totalG, totalB uint64
+
+	var pureBlackCount int
+	var pitchBlackCount int
 
 	for y := minY; y < maxY; y++ {
 		for x := minX; x < maxX; x++ {
@@ -71,6 +73,14 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 			totalR += uint64(r8)
 			totalG += uint64(g8)
 			totalB += uint64(b8)
+
+			_, _, v := rgbToHSV(r8, g8, b8)
+			if v <= 20 {
+				pureBlackCount++
+			}
+			if v <= 10 {
+				pitchBlackCount++
+			}
 
 			pixelColor := classifyPixel(r8, g8, b8)
 			counts[pixelColor]++
@@ -82,31 +92,66 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 	avgB := int(totalB / uint64(pixelCount))
 	avgH, avgS, avgV := rgbToHSV(avgR, avgG, avgB)
 
-	var detected GemColor
-	var bestGemColor = Empty
-	var maxGemCount int
-	distinctColors := 0
-
-	noiseThreshold := pixelCount / 8
+	var maxRealCount int
 
 	for color, count := range counts {
-		if color != Empty && count > maxGemCount {
-			maxGemCount = count
-			bestGemColor = color
-		}
-		if color != Empty && color != White && count > noiseThreshold {
-			distinctColors++
+		if color != Empty && color != White && count > maxRealCount {
+			maxRealCount = count
 		}
 	}
 
-	hasBlack := counts[Empty] > noiseThreshold
+	var intendedColor GemColor
 
-	if counts[Empty] > int(float64(pixelCount)*0.75) {
-		detected = Empty
-	} else if distinctColors >= 3 && hasBlack {
-		detected = Hypercube
+	if counts[White] > maxRealCount*2 {
+		intendedColor = White
 	} else {
-		detected = bestGemColor
+		scoreYellow := counts[Yellow]
+		scoreOrange := counts[Orange]
+		scoreRed := counts[Red]
+		scorePurple := counts[Purple]
+		scoreBlue := counts[Blue]
+		scoreGreen := counts[Green]
+
+		bestScore := 0
+		var bestColor = Empty
+
+		if scoreYellow > bestScore {
+			bestScore = scoreYellow
+			bestColor = Yellow
+		}
+		if scoreOrange > bestScore {
+			bestScore = scoreOrange
+			bestColor = Orange
+		}
+		if scoreRed > bestScore {
+			bestScore = scoreRed
+			bestColor = Red
+		}
+		if scorePurple > bestScore {
+			bestScore = scorePurple
+			bestColor = Purple
+		}
+		if scoreBlue > bestScore {
+			bestScore = scoreBlue
+			bestColor = Blue
+		}
+		if scoreGreen > bestScore {
+			bestScore = scoreGreen
+			bestColor = Green
+		}
+
+		intendedColor = bestColor
+	}
+
+	var detected GemColor
+	thresholdEmpty := int(float64(pixelCount) * 0.78)
+
+	// SIMPLIFIED DECISION TREE
+	// If the cell is mostly background tiles, it's Empty. Otherwise, trust the intended color.
+	if counts[Empty] >= thresholdEmpty {
+		detected = Empty
+	} else {
+		detected = intendedColor
 	}
 
 	countsDebug := ""
@@ -116,8 +161,8 @@ func analyzeGem(fullImg image.Image, captureStartX, captureStartY, targetX, targ
 		}
 	}
 
-	logMsg := fmt.Sprintf("Cell [%d][%d] | Result: %-9s | Avg HSV: H:%3d S:%3d V:%3d | Breakdown: %s",
-		row, col, detected, avgH, avgS, avgV, countsDebug)
+	logMsg := fmt.Sprintf("Cell [%d][%d] | Result: %-9s | PureBlk: %4d | PitchBlk: %4d | Avg HSV: H:%3d S:%3d V:%3d | Breakdown: %s",
+		row, col, detected, pureBlackCount, pitchBlackCount, avgH, avgS, avgV, countsDebug)
 
 	return detected, logMsg
 }

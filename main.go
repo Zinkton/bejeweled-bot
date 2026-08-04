@@ -113,13 +113,13 @@ func toggleBot() {
 func botWorker() {
 	for {
 		if botRunning {
-			fmt.Println("\n--- New Turn ---")
-			currentGrid, logs := parseBoard()
+			// fmt.Println("\n--- New Turn ---")
+			currentGrid, _ := parseBoard()
 
 			moves := findAllMoves(currentGrid)
 
 			if len(moves) > 0 {
-				fmt.Printf("   -> Found %d potential moves! Executing queue...\n", len(moves))
+				// fmt.Printf("   -> Found %d potential moves! Executing queue...\n", len(moves))
 
 				usedCells := make(map[string]bool)
 				executedCount := 0
@@ -131,7 +131,7 @@ func botWorker() {
 						continue
 					}
 
-					fmt.Printf("      * Executing: Swap Row %d, Col %d to the %s.\n", m.Row, m.Col, m.Dir)
+					// fmt.Printf("      * Executing: Swap Row %d, Col %d to the %s.\n", m.Row, m.Col, m.Dir)
 					executeMove(m)
 					executedCount++
 
@@ -140,19 +140,19 @@ func botWorker() {
 					time.Sleep(75 * time.Millisecond)
 				}
 
-				fmt.Printf("   -> Queue finished (%d moves executed). Waiting for board to settle...\n", executedCount)
+				// fmt.Printf("   -> Queue finished (%d moves executed). Waiting for board to settle...\n", executedCount)
 
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(350 * time.Millisecond)
 			} else {
-				fmt.Println("   -> [ERROR] No valid moves found! Dumping vision data...")
+				// fmt.Println("   -> [ERROR] No valid moves found! Dumping vision data...")
 
-				fmt.Println("\n--- Vision Debug Log ---")
-				for _, l := range logs {
-					fmt.Println(l)
-				}
-				fmt.Println("------------------------")
+				// fmt.Println("\n--- Vision Debug Log ---")
+				// for _, l := range logs {
+				// 	fmt.Println(l)
+				// }
+				// fmt.Println("------------------------")
 
-				printGrid(currentGrid)
+				// printGrid(currentGrid)
 
 				time.Sleep(75 * time.Millisecond)
 			}
