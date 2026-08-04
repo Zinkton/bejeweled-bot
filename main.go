@@ -137,12 +137,12 @@ func botWorker() {
 
 					usedCells[targetID] = true
 
-					time.Sleep(75 * time.Millisecond)
+					time.Sleep(10 * time.Millisecond)
 				}
 
 				// fmt.Printf("   -> Queue finished (%d moves executed). Waiting for board to settle...\n", executedCount)
 
-				time.Sleep(350 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 			} else {
 				// fmt.Println("   -> [ERROR] No valid moves found! Dumping vision data...")
 
@@ -154,7 +154,7 @@ func botWorker() {
 
 				// printGrid(currentGrid)
 
-				time.Sleep(75 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 			}
 		} else {
 			time.Sleep(100 * time.Millisecond)
