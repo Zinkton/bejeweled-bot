@@ -114,7 +114,9 @@ func (b *Bot) Worker() {
 		}
 
 		usedCells := make(map[string]bool)
-		cycleDetected := false
+
+		cycleLength := 0
+		movesExecuted := 0
 
 		for _, m := range moves {
 			targetID := fmt.Sprintf("%d,%d", m.Row, m.Col)
@@ -124,19 +126,19 @@ func (b *Bot) Worker() {
 
 			b.ExecuteMove(m)
 			usedCells[targetID] = true
+			movesExecuted++
 
 			moveStr := fmt.Sprintf("%d,%d,%s", m.Row, m.Col, m.Dir)
 
-			if b.trackAndCheckCycle(moveStr) {
-				cycleDetected = true
-				break
+			if k := b.trackAndCheckCycle(moveStr); k > 0 {
+				cycleLength = k
 			}
 
 			time.Sleep(10 * time.Millisecond)
 		}
 
-		if cycleDetected {
-			fmt.Println("   -> [!] Phantom cycle detected! Waiting 500ms for board to snap back...")
+		if cycleLength > 0 && movesExecuted <= cycleLength {
+			fmt.Println("   -> [!] Phantom cycle (3x) detected! Waiting 500ms for board to snap back...")
 			time.Sleep(500 * time.Millisecond)
 			b.MoveHistory = nil
 		}
@@ -164,34 +166,35 @@ func (b *Bot) ExecuteMove(m Move) {
 	}
 }
 
-func (b *Bot) trackAndCheckCycle(move string) bool {
+func (b *Bot) trackAndCheckCycle(move string) int {
 	b.MoveHistory = append(b.MoveHistory, move)
 
-	if len(b.MoveHistory) > 20 {
-		b.MoveHistory = b.MoveHistory[len(b.MoveHistory)-20:]
+	if len(b.MoveHistory) > 30 {
+		b.MoveHistory = b.MoveHistory[len(b.MoveHistory)-30:]
 	}
 
 	n := len(b.MoveHistory)
 	maxCycleLen := 5
 
 	for k := 1; k <= maxCycleLen; k++ {
-		if n >= 2*k {
+		if n >= 3*k {
 			chunk1 := b.MoveHistory[n-k : n]
 			chunk2 := b.MoveHistory[n-2*k : n-k]
+			chunk3 := b.MoveHistory[n-3*k : n-2*k]
 
 			isMatch := true
 			for i := range chunk1 {
-				if chunk1[i] != chunk2[i] {
+				if chunk1[i] != chunk2[i] || chunk2[i] != chunk3[i] {
 					isMatch = false
 					break
 				}
 			}
 
 			if isMatch {
-				return true
+				return k
 			}
 		}
 	}
 
-	return false
+	return 0
 }
