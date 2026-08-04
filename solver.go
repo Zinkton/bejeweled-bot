@@ -193,6 +193,42 @@ func clearMatches(grid *[8][8]GemColor) bool {
 }
 
 func checkSwap(grid *[8][8]GemColor, r1, c1, r2, c2 int) bool {
+	gem1 := grid[r1][c1]
+	gem2 := grid[r2][c2]
+
+	isHypercubeMove := false
+	var targetColor GemColor = Empty
+
+	if gem1 == Hypercube && gem2 != Empty {
+		isHypercubeMove = true
+		targetColor = gem2
+	} else if gem2 == Hypercube && gem1 != Empty {
+		isHypercubeMove = true
+		targetColor = gem1
+	}
+
+	if isHypercubeMove {
+		if gem1 == Hypercube && gem2 == Hypercube {
+			for r := range 8 {
+				for c := range 8 {
+					grid[r][c] = Empty
+				}
+			}
+		} else {
+			grid[r1][c1] = Empty
+			grid[r2][c2] = Empty
+
+			for r := range 8 {
+				for c := range 8 {
+					if grid[r][c] == targetColor {
+						grid[r][c] = Empty
+					}
+				}
+			}
+		}
+		return true
+	}
+
 	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
 
 	if clearMatches(grid) {
@@ -208,7 +244,17 @@ func findAllMoves(grid [8][8]GemColor) []Move {
 
 	gridPtr := &grid
 
-	clearMatches(gridPtr)
+	if clearMatches(gridPtr) {
+		return moves
+	}
+
+	for r := range 8 {
+		for c := range 8 {
+			if gridPtr[r][c] == Empty {
+				return moves
+			}
+		}
+	}
 
 	for r := range 8 {
 		for c := range 8 {
@@ -222,7 +268,7 @@ func findAllMoves(grid [8][8]GemColor) []Move {
 				}
 			}
 
-			if r < 7 && gridPtr[r+1][c] != Empty {
+			if r < 7 && gridPtr[r][c] != Empty && gridPtr[r+1][c] != Empty {
 				if checkSwap(gridPtr, r, c, r+1, c) {
 					moves = append(moves, Move{Row: r, Col: c, Dir: "Down"})
 				}

@@ -92,6 +92,15 @@ func toggleBot() {
 		return
 	}
 
+	// currentGrid, logs := parseBoard()
+	// printGrid(currentGrid)
+	// fmt.Println("\n--- Vision Debug Log ---")
+	// for _, l := range logs {
+	// 	fmt.Println(l)
+	// }
+	// fmt.Println("------------------------")
+	// return
+
 	botRunning = !botRunning
 
 	if botRunning {

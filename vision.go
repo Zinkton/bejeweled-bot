@@ -10,27 +10,24 @@ import (
 
 const (
 	targetRed    = 0
-	targetOrange = 30
-	targetYellow = 58
-	targetGreen  = 130
+	targetOrange = 27
+	targetYellow = 53
+	targetGreen  = 132
 	targetBlue   = 210
-	targetPurple = 300
+	targetPurple = 298
 )
 
 func parseBoard() ([8][8]GemColor, []string) {
 	var grid [8][8]GemColor
 	var logs []string
-	sampleSize := 10
-	yOffset := 15
+	sampleSize := 60
 
 	for r := range 8 {
 		for c := range 8 {
 			centerX := boardAnchorX + int(float64(c)*stepX)
 			centerY := boardAnchorY + int(float64(r)*stepY)
 
-			captureY := centerY + yOffset
-
-			img, _ := robotgo.CaptureImg(centerX-(sampleSize/2), captureY-(sampleSize/2), sampleSize, sampleSize)
+			img, _ := robotgo.CaptureImg(centerX-(sampleSize/2), centerY-(sampleSize/2), sampleSize, sampleSize)
 
 			detected, logMsg := analyzeGem(img, r, c)
 
@@ -66,10 +63,10 @@ func analyzeGem(img image.Image, row, col int) (GemColor, string) {
 
 	if v < 15 {
 		detected = Empty
-	} else if v >= 15 && v < 45 {
-		detected = Hypercube
 	} else if s < 15 && v >= 50 {
 		detected = White
+	} else if v >= 15 && v < 75 && s < 55 {
+		detected = Hypercube
 	} else {
 		detected = closestColorByHue(h)
 	}
