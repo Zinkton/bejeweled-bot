@@ -68,6 +68,8 @@ func gemToAscii(g GemColor) string {
 		return "\033[35m ● \033[0m"
 	case White:
 		return "\033[37m ✦ \033[0m"
+	case Hypercube:
+		return "\033[30m ■ \033[0m"
 	default:
 		return " ? "
 	}
@@ -131,34 +133,102 @@ func hasMatches(grid [8][8]GemColor) bool {
 	return false
 }
 
-func checkSwap(grid *[8][8]GemColor, r1, c1, r2, c2 int) bool {
-	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
-
-	matchFound := hasMatches(*grid)
-
-	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
-
-	return matchFound
-}
-
-func findHint(grid [8][8]GemColor) (Move, bool) {
-	gridPtr := &grid
+func clearMatches(grid *[8][8]GemColor) bool {
+	var toClear [8][8]bool
+	foundAny := false
 
 	for r := range 8 {
-		for c := range 8 {
-			if c < 7 {
-				if checkSwap(gridPtr, r, c, r, c+1) {
-					return Move{Row: r, Col: c, Dir: "Right"}, true
-				}
+		for c := range 6 {
+			color := grid[r][c]
+			if color == Empty || color == Hypercube {
+				continue
 			}
 
-			if r < 7 {
-				if checkSwap(gridPtr, r, c, r+1, c) {
-					return Move{Row: r, Col: c, Dir: "Down"}, true
+			if grid[r][c+1] == color && grid[r][c+2] == color {
+				toClear[r][c] = true
+				toClear[r][c+1] = true
+				toClear[r][c+2] = true
+				foundAny = true
+
+				for i := c + 3; i < 8 && grid[r][i] == color; i++ {
+					toClear[r][i] = true
 				}
 			}
 		}
 	}
 
-	return Move{}, false
+	for c := range 8 {
+		for r := range 6 {
+			color := grid[r][c]
+			if color == Empty || color == Hypercube {
+				continue
+			}
+
+			if grid[r+1][c] == color && grid[r+2][c] == color {
+				toClear[r][c] = true
+				toClear[r+1][c] = true
+				toClear[r+2][c] = true
+				foundAny = true
+
+				for i := r + 3; i < 8 && grid[i][c] == color; i++ {
+					toClear[i][c] = true
+				}
+			}
+		}
+	}
+
+	if !foundAny {
+		return false
+	}
+
+	for r := range 8 {
+		for c := range 8 {
+			if toClear[r][c] {
+				grid[r][c] = Empty
+			}
+		}
+	}
+
+	return true
+}
+
+func checkSwap(grid *[8][8]GemColor, r1, c1, r2, c2 int) bool {
+	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
+
+	if clearMatches(grid) {
+		return true
+	}
+
+	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
+	return false
+}
+
+func findAllMoves(grid [8][8]GemColor) []Move {
+	var moves []Move
+
+	gridPtr := &grid
+
+	clearMatches(gridPtr)
+
+	for r := range 8 {
+		for c := range 8 {
+			if gridPtr[r][c] == Empty {
+				continue
+			}
+
+			if c < 7 && gridPtr[r][c+1] != Empty {
+				if checkSwap(gridPtr, r, c, r, c+1) {
+					moves = append(moves, Move{Row: r, Col: c, Dir: "Right"})
+				}
+			}
+
+			if r < 7 && gridPtr[r+1][c] != Empty {
+				if checkSwap(gridPtr, r, c, r+1, c) {
+					moves = append(moves, Move{Row: r, Col: c, Dir: "Down"})
+				}
+			}
+		}
+	}
+
+	return moves
 }

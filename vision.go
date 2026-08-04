@@ -17,27 +17,32 @@ const (
 	targetPurple = 300
 )
 
-func parseBoard() [8][8]GemColor {
+func parseBoard() ([8][8]GemColor, []string) {
 	var grid [8][8]GemColor
-	sampleSize := 30
+	var logs []string
+	sampleSize := 10
+	yOffset := 15
 
-	fmt.Println("\n--- Vision Debug Log ---")
 	for r := range 8 {
 		for c := range 8 {
 			centerX := boardAnchorX + int(float64(c)*stepX)
 			centerY := boardAnchorY + int(float64(r)*stepY)
 
-			img, _ := robotgo.CaptureImg(centerX-(sampleSize/2), centerY-(sampleSize/2), sampleSize, sampleSize)
+			captureY := centerY + yOffset
 
-			grid[r][c] = analyzeGem(img, r, c)
+			img, _ := robotgo.CaptureImg(centerX-(sampleSize/2), captureY-(sampleSize/2), sampleSize, sampleSize)
+
+			detected, logMsg := analyzeGem(img, r, c)
+
+			grid[r][c] = detected
+			logs = append(logs, logMsg)
 		}
 	}
-	fmt.Println("------------------------")
 
-	return grid
+	return grid, logs
 }
 
-func analyzeGem(img image.Image, row, col int) GemColor {
+func analyzeGem(img image.Image, row, col int) (GemColor, string) {
 	bounds := img.Bounds()
 	var totalR, totalG, totalB uint64
 	pixelCount := uint64(bounds.Dx() * bounds.Dy())
@@ -63,16 +68,17 @@ func analyzeGem(img image.Image, row, col int) GemColor {
 		detected = Empty
 	} else if v >= 15 && v < 45 {
 		detected = Hypercube
-	} else if s < 15 && v >= 65 {
+	} else if s < 15 && v >= 50 {
 		detected = White
 	} else {
 		detected = closestColorByHue(h)
 	}
 
-	fmt.Printf("Cell [%d][%d] | RGB: (%3d, %3d, %3d) | HSV: H:%3d S:%3d V:%3d | Result: %s\n",
+	// Format the log message but DO NOT print it yet
+	logMsg := fmt.Sprintf("Cell [%d][%d] | RGB: (%3d, %3d, %3d) | HSV: H:%3d S:%3d V:%3d | Result: %s",
 		row, col, avgR, avgG, avgB, h, s, v, detected)
 
-	return detected
+	return detected, logMsg
 }
 
 func closestColorByHue(hue int) GemColor {

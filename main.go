@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-vgo/robotgo"
 	"golang.design/x/hotkey"
@@ -16,6 +17,8 @@ var (
 
 	hasTopLeft  bool
 	hasBotRight bool
+
+	botRunning bool
 )
 
 func calibrateTopLeft() {
@@ -40,31 +43,6 @@ func calibrateBottomRight() {
 
 	fmt.Printf("\n[Calibrated] Bottom-Right Gem anchored at X: %d, Y: %d\n", x, y)
 	fmt.Printf("[Success] Grid spacing calculated -> X: %.2fpx, Y: %.2fpx\n", stepX, stepY)
-}
-
-func executeBotCycle() {
-	if !hasTopLeft || !hasBotRight {
-		fmt.Println("\n[Error] Please calibrate BOTH corners of the board first!")
-		return
-	}
-
-	fmt.Println("\n--- Bot Cycle Started ---")
-
-	fmt.Println("1. Capturing and parsing screen data...")
-	currentGrid := parseBoard()
-
-	fmt.Println("Parsed Board:")
-	printGrid(currentGrid)
-
-	fmt.Println("2. Calculating move...")
-	move, found := findHint(currentGrid)
-
-	if found {
-		fmt.Printf("   -> Move found! Swap Row %d, Col %d to the %s.\n", move.Row, move.Col, move.Dir)
-		executeMove(move)
-	} else {
-		fmt.Println("   -> No valid moves found on this board.")
-	}
 }
 
 func executeMove(m Move) {
@@ -108,15 +86,84 @@ func listenForBottomRight() {
 	}
 }
 
+func toggleBot() {
+	if !hasTopLeft || !hasBotRight {
+		fmt.Println("\n[Error] Please calibrate BOTH corners of the board first!")
+		return
+	}
+
+	botRunning = !botRunning
+
+	if botRunning {
+		fmt.Println("\n[▶] Bot STARTED! Press 'Ctrl + Shift + Z' to pause.")
+	} else {
+		fmt.Println("\n[⏸] Bot PAUSED! Press 'Ctrl + Shift + Z' to resume.")
+	}
+}
+
+func botWorker() {
+	for {
+		if botRunning {
+			fmt.Println("\n--- New Turn ---")
+			currentGrid, logs := parseBoard()
+
+			moves := findAllMoves(currentGrid)
+
+			if len(moves) > 0 {
+				fmt.Printf("   -> Found %d potential moves! Executing queue...\n", len(moves))
+
+				usedCells := make(map[string]bool)
+				executedCount := 0
+
+				for _, m := range moves {
+					targetID := fmt.Sprintf("%d,%d", m.Row, m.Col)
+
+					if usedCells[targetID] {
+						continue
+					}
+
+					fmt.Printf("      * Executing: Swap Row %d, Col %d to the %s.\n", m.Row, m.Col, m.Dir)
+					executeMove(m)
+					executedCount++
+
+					usedCells[targetID] = true
+
+					time.Sleep(75 * time.Millisecond)
+				}
+
+				fmt.Printf("   -> Queue finished (%d moves executed). Waiting for board to settle...\n", executedCount)
+
+				time.Sleep(500 * time.Millisecond)
+			} else {
+				fmt.Println("   -> [ERROR] No valid moves found! Dumping vision data...")
+
+				fmt.Println("\n--- Vision Debug Log ---")
+				for _, l := range logs {
+					fmt.Println(l)
+				}
+				fmt.Println("------------------------")
+
+				printGrid(currentGrid)
+
+				time.Sleep(75 * time.Millisecond)
+			}
+		} else {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
 func main() {
 	fmt.Println("Bejeweled Bot Initialized!")
 	fmt.Println("1. Hover Top-Left gem and press 'Ctrl + Shift + X'")
 	fmt.Println("2. Hover Bottom-Right gem and press 'Ctrl + Shift + C'")
-	fmt.Println("3. Press 'Ctrl + Shift + Z' to trigger a bot cycle.")
-	fmt.Println("Press 'Ctrl + C' in this terminal to quit.")
+	fmt.Println("3. Press 'Ctrl + Shift + Z' to toggle the bot ON/OFF.")
+	fmt.Println("Press 'Ctrl + C' in this terminal to quit completely.")
 
 	go listenForTopLeft()
 	go listenForBottomRight()
+
+	go botWorker()
 
 	botHk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyZ)
 	botHk.Register()
@@ -124,6 +171,6 @@ func main() {
 
 	for {
 		<-botHk.Keydown()
-		executeBotCycle()
+		toggleBot()
 	}
 }
