@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/go-vgo/robotgo"
@@ -15,7 +16,7 @@ import (
 func (b *Bot) parseBoard() ([8][8]GemColor, []string) {
 	var grid [8][8]GemColor
 	var logs []string
-	sampleSize := 64
+	sampleSize := 32
 
 	startX := b.AnchorX - (sampleSize / 2)
 	startY := b.AnchorY - (sampleSize / 2)
@@ -36,7 +37,7 @@ func (b *Bot) parseBoard() ([8][8]GemColor, []string) {
 		}
 	}
 
-	// saveDebugData(fullBoardImg, grid, logs)
+	saveDebugData(fullBoardImg, grid, logs)
 
 	return grid, logs
 }
@@ -134,7 +135,7 @@ func closestColorByHue(hue int) GemColor {
 		Red:    0,
 		Orange: 27,
 		Yellow: 53,
-		Green:  132,
+		Green:  110,
 		Blue:   210,
 		Purple: 298,
 	}
@@ -238,6 +239,28 @@ func saveDebugData(fullBoardImg image.Image, grid [8][8]GemColor, logs []string)
 
 		for _, logMsg := range logs {
 			txtFile.WriteString(logMsg + "\n")
+		}
+	}
+
+	cleanupOldLogs(debugDir, 5)
+}
+
+func cleanupOldLogs(dir string, maxKept int) {
+	pngFiles, _ := filepath.Glob(filepath.Join(dir, "board_*.png"))
+	txtFiles, _ := filepath.Glob(filepath.Join(dir, "board_*.txt"))
+
+	sort.Strings(pngFiles)
+	sort.Strings(txtFiles)
+
+	if len(pngFiles) > maxKept {
+		for _, f := range pngFiles[:len(pngFiles)-maxKept] {
+			os.Remove(f)
+		}
+	}
+
+	if len(txtFiles) > maxKept {
+		for _, f := range txtFiles[:len(txtFiles)-maxKept] {
+			os.Remove(f)
 		}
 	}
 }
