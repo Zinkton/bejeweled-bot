@@ -22,6 +22,7 @@ const (
 	StateFire      GemState = 1
 	StateHypercube GemState = 2
 	StateStar      GemState = 4
+	StateSupernova GemState = 5
 )
 
 type MatchType uint8
@@ -32,6 +33,7 @@ const (
 	MatchType4    MatchType = 2
 	MatchTypeL    MatchType = 3
 	MatchType5    MatchType = 4
+	MatchType6    MatchType = 5
 )
 
 // --- Structs ---

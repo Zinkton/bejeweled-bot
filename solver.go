@@ -7,23 +7,69 @@ import (
 
 // GetSortedMoves evaluates all possible moves on the board and sorts them by score.
 func GetSortedMoves(b *Board) []Move {
+	// Mark matched gems to not interfere with them
+	markMatchedGems(&b.State)
+
 	legalMoves := b.GenerateLegalMoves()
 
 	slices.SortFunc(legalMoves, func(a, b Move) int {
 		return cmp.Compare(b.Score, a.Score)
 	})
 
+	// Deep search for future, too difficult for now
+	// for _, legalMove := range legalMoves {
+	// 	legalMove.Score = b.Push(legalMove)
+	// 	// Recursion
+	// 	b.Pop()
+	// }
+
 	return legalMoves
+}
+
+func (b *Board) Push(move Move) int {
+	b.StateHistory = append(b.StateHistory, b.State)
+
+	score := 0
+	// Empty move, just settle
+	if move.Index1 == move.Index2 {
+		score -= 5
+
+		b.Settle()
+
+		return score
+	}
+
+	return b.evaluateSwap(move.Index1, move.Index2, &b.State)
+}
+
+func (b *Board) Settle() {
+	for i := range b.State {
+		if b.State[i].IsMatched && b.State[i].State == StateNormal {
+			b.State[i].Clear()
+		}
+	}
+
+	for y := 7; y > 0; y-- {
+		for x := range 8 {
+			if b.State[y*8+x].IsEmpty() {
+				for existingGemY := y - 1; existingGemY >= 0; existingGemY-- {
+					if !b.State[existingGemY*8+x].IsEmpty() {
+						b.State[y*8+x], b.State[existingGemY*8+x] = b.State[existingGemY*8+x], b.State[y*8+x]
+					}
+				}
+			}
+		}
+	}
+}
+
+func (b *Board) Pop() {
+	b.State = b.StateHistory[len(b.StateHistory)-1]
+	b.StateHistory = b.StateHistory[:len(b.StateHistory)-1]
 }
 
 // GenerateLegalMoves scans the board and returns a list of all valid moves.
 func (b *Board) GenerateLegalMoves() []Move {
 	var legalMoves []Move
-
-	// Create a copy of the board state to simulate making moves safely
-	simState := b.State
-	// Mark matched gems to not interfere with them
-	markMatchedGems(&simState)
 
 	// Iterate through all 64 spaces on the 8x8 grid
 	for y := range 8 {
@@ -33,7 +79,9 @@ func (b *Board) GenerateLegalMoves() []Move {
 			// 1. Try swapping Right (if we are not on the right edge)
 			if x < 7 {
 				rightIdx := idx + 1
-				score := b.evaluateSwap(idx, rightIdx, simState)
+				// Create a copy of the board state to simulate making moves safely
+				simState := b.State
+				score := b.evaluateSwap(idx, rightIdx, &simState)
 				if score > 0 {
 					legalMoves = append(legalMoves, Move{
 						Index1: idx,
@@ -46,7 +94,9 @@ func (b *Board) GenerateLegalMoves() []Move {
 			// 2. Try swapping Down (if we are not on the bottom edge)
 			if y < 7 {
 				downIdx := idx + 8
-				score := b.evaluateSwap(idx, downIdx, simState)
+				// Create a copy of the board state to simulate making moves safely
+				simState := b.State
+				score := b.evaluateSwap(idx, downIdx, &simState)
 				if score > 0 {
 					legalMoves = append(legalMoves, Move{
 						Index1: idx,
@@ -58,7 +108,8 @@ func (b *Board) GenerateLegalMoves() []Move {
 		}
 	}
 
-	legalMoves = append(legalMoves, Move{})
+	// Prefer not waiting
+	legalMoves = append(legalMoves, Move{Score: -5})
 
 	return legalMoves
 }
@@ -67,7 +118,7 @@ func markMatchedGems(grid *[64]Gem) {
 	for y := range 8 {
 		for x := range 6 {
 			gem := grid[y*8+x]
-			if gem.Color == ColorNone {
+			if gem.Color == ColorNone || gem.IsMatched {
 				continue
 			}
 			if grid[y*8+x+1].Color == gem.Color && grid[y*8+x+2].Color == gem.Color {
@@ -84,7 +135,7 @@ func markMatchedGems(grid *[64]Gem) {
 	for x := range 8 {
 		for y := range 6 {
 			gem := grid[y*8+x]
-			if gem.Color == ColorNone {
+			if gem.Color == ColorNone || gem.IsMatched {
 				continue
 			}
 			if grid[(y+1)*8+x].Color == gem.Color && grid[(y+2)*8+x].Color == gem.Color {
@@ -128,6 +179,7 @@ func checkLineMatch(grid *[64]Gem, idx int) (MatchType, []int) {
 	}
 	vert := down - up + 1
 
+	is6 := horiz >= 6 || vert >= 6
 	is5 := horiz >= 5 || vert >= 5
 	isLOrT := horiz >= 3 && vert >= 3
 	is4 := horiz == 4 || vert == 4
@@ -158,6 +210,9 @@ func checkLineMatch(grid *[64]Gem, idx int) (MatchType, []int) {
 	}
 
 	// Determine match type
+	if is6 {
+		return MatchType6, matchedIndices
+	}
 	if is5 {
 		return MatchType5, matchedIndices
 	}
@@ -171,7 +226,8 @@ func checkLineMatch(grid *[64]Gem, idx int) (MatchType, []int) {
 	return MatchType3, matchedIndices
 }
 
-func (b *Board) evaluateSwap(idx1, idx2 int, state [64]Gem) int {
+// Evaluate and execute the swap
+func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	gem1 := state[idx1]
 	gem2 := state[idx2]
 
@@ -180,7 +236,7 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state [64]Gem) int {
 	}
 
 	if gem1.State == StateHypercube && gem2.State == StateHypercube {
-		return 10000
+		return 100000
 	}
 
 	var destroyedGemIdxs []int
@@ -188,49 +244,49 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state [64]Gem) int {
 	if gem1.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx1)
 
-		return evaluateCascade(destroyedGemIdxs, &state, []GemColor{gem2.Color})
+		return evaluateCascade(destroyedGemIdxs, state, []GemColor{gem2.Color})
 	}
 
 	if gem2.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx2)
 
-		return evaluateCascade(destroyedGemIdxs, &state, []GemColor{gem1.Color})
+		return evaluateCascade(destroyedGemIdxs, state, []GemColor{gem1.Color})
 	}
 
 	state[idx1], state[idx2] = state[idx2], state[idx1]
 
 	// Check if swapping them creates a match at either of their new positions
-	matchType1, matchIdxs1 := checkLineMatch(&state, idx1)
-	matchType2, matchIdxs2 := checkLineMatch(&state, idx2)
+	matchType1, matchIdxs1 := checkLineMatch(state, idx1)
+	matchType2, matchIdxs2 := checkLineMatch(state, idx2)
 
 	swapScore := max(0, int(matchType1)-1)*10 + max(0, int(matchType2)-1)*10
-	for i := range matchIdxs1 {
-		destroyedGemIdxs = append(destroyedGemIdxs, i)
+	for _, match1Idx := range matchIdxs1 {
+		destroyedGemIdxs = append(destroyedGemIdxs, match1Idx)
 	}
 
-	for i := range matchIdxs2 {
-		destroyedGemIdxs = append(destroyedGemIdxs, i)
+	for _, match2Idx := range matchIdxs2 {
+		destroyedGemIdxs = append(destroyedGemIdxs, match2Idx)
 	}
 
 	var colorTriggers []GemColor
 
 	if matchType1 != MatchTypeNone && b.IsBlazingSpeed {
-		match1ExplosionIds := getExplosionIdxs(&state, idx1)
+		match1ExplosionIds := getExplosionIdxs(state, idx1)
 		destroyedGemIdxs = append(destroyedGemIdxs, match1ExplosionIds...)
 
-		for i := range match1ExplosionIds {
-			if state[i].State == StateHypercube {
+		for _, match1ExplosionIdx := range match1ExplosionIds {
+			if state[match1ExplosionIdx].State == StateHypercube {
 				colorTriggers = append(colorTriggers, state[idx1].Color)
 			}
 		}
 	}
 
 	if matchType2 != MatchTypeNone && b.IsBlazingSpeed {
-		match2ExplosionIds := getExplosionIdxs(&state, idx2)
+		match2ExplosionIds := getExplosionIdxs(state, idx2)
 		destroyedGemIdxs = append(destroyedGemIdxs, match2ExplosionIds...)
 
-		for i := range match2ExplosionIds {
-			if state[i].State == StateHypercube {
+		for _, match2ExplosionIdx := range match2ExplosionIds {
+			if state[match2ExplosionIdx].State == StateHypercube {
 				colorTriggers = append(colorTriggers, state[idx2].Color)
 			}
 		}
@@ -246,7 +302,7 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state [64]Gem) int {
 	slices.Sort(colorTriggers)
 	colorTriggers = slices.Compact(colorTriggers)
 
-	swapScore += evaluateCascade(destroyedGemIdxs, &state, colorTriggers)
+	swapScore += evaluateCascade(destroyedGemIdxs, state, colorTriggers)
 
 	return int(swapScore)
 }
@@ -332,6 +388,7 @@ func getStarIdxs(currentState *[64]Gem, starIdx int) []int {
 func (g *Gem) Clear() {
 	g.Color = ColorNone
 	g.State = StateNormal
+	g.IsMatched = false
 }
 
 func (g *Gem) IsEmpty() bool {
@@ -341,20 +398,20 @@ func (g *Gem) IsEmpty() bool {
 func evaluateCascade(destroyedGemIdxs []int, currentState *[64]Gem, colorTriggers []GemColor) int {
 	score := 0
 
-	for i := range destroyedGemIdxs {
-		if currentState[i].IsEmpty() {
+	for _, destroyedGemIdx := range destroyedGemIdxs {
+		if currentState[destroyedGemIdx].IsEmpty() {
 			continue
 		}
 
 		score++
-		score += int(currentState[i].BonusTimeAmnt) * 1000
+		score += int(currentState[destroyedGemIdx].BonusTimeAmnt) * 1000
 
-		newTriggerColor := currentState[i].Color
+		newTriggerColor := currentState[destroyedGemIdx].Color
 
 		newDestroyedGemIdxs := []int{}
-		switch currentState[i].State {
+		switch currentState[destroyedGemIdx].State {
 		case StateFire:
-			newDestroyedGemIdxs = getExplosionIdxs(currentState, i)
+			newDestroyedGemIdxs = getExplosionIdxs(currentState, destroyedGemIdx)
 		case StateHypercube:
 			for j := range 64 {
 				g := currentState[j]
@@ -364,10 +421,17 @@ func evaluateCascade(destroyedGemIdxs []int, currentState *[64]Gem, colorTrigger
 				}
 			}
 		case StateStar:
-			newDestroyedGemIdxs = getStarIdxs(currentState, i)
+			newDestroyedGemIdxs = getStarIdxs(currentState, destroyedGemIdx)
+		case StateSupernova:
+			explosionIdxs := getExplosionIdxs(currentState, destroyedGemIdx)
+			for _, explosionIdx := range explosionIdxs {
+				newDestroyedGemIdxs = append(newDestroyedGemIdxs, getStarIdxs(currentState, explosionIdx)...)
+			}
+			slices.Sort(newDestroyedGemIdxs)
+			newDestroyedGemIdxs = slices.Compact(newDestroyedGemIdxs)
 		}
 
-		currentState[i].Clear()
+		currentState[destroyedGemIdx].Clear()
 
 		score += evaluateCascade(newDestroyedGemIdxs, currentState, []GemColor{newTriggerColor})
 	}

@@ -26,10 +26,16 @@ func testFindBestMove(t *testing.T, layout [64]int, states [64]GemState, bonusTi
 	expectedIdx1 := (y1 * 8) + x1
 	expectedIdx2 := (y2 * 8) + x2
 
+	actualX1, actualY1 := bestMove.Index1%8, bestMove.Index1/8
+	actualX2, actualY2 := bestMove.Index2%8, bestMove.Index2/8
+
 	if (bestMove.Index1 != expectedIdx1 || bestMove.Index2 != expectedIdx2) &&
 		(bestMove.Index1 != expectedIdx2 || bestMove.Index2 != expectedIdx1) {
-		t.Errorf("Expected move between (%d,%d) and (%d,%d) [Indices %d, %d], got indices %d and %d",
-			x1, y1, x2, y2, expectedIdx1, expectedIdx2, bestMove.Index1, bestMove.Index2)
+		t.Errorf(
+			"Expected move between (%d,%d) and (%d,%d) [Indices %d, %d], got (%d,%d) and (%d,%d) [Indices %d, %d]",
+			x1, y1, x2, y2, expectedIdx1, expectedIdx2,
+			actualX1, actualY1, actualX2, actualY2, bestMove.Index1, bestMove.Index2,
+		)
 	}
 }
 
@@ -151,16 +157,16 @@ func TestFindBestMoveHyperCube(t *testing.T) {
 		0, 1, 0, 0, 1, 2, 3, 4,
 		2, 3, 4, 1, 2, 3, 4, 3,
 		1, 2, 3, 4, 1, 2, 3, 4,
-		2, 3, 4, 1, 2, 3, 4, 1,
-		1, 2, 3, 4, 1, 2, 3, 4,
+		2, 3, 4, 3, 2, 3, 4, 1,
+		1, 2, 3, 4, 1, 2, 3, 0,
 		2, 3, 4, 1, 0, 0, 4, 0,
 		1, 2, 3, 4, 1, 2, 3, 4,
-		0, 1, 0, 0, 2, 3, 4, 1,
+		0, 1, 0, 0, 2, 3, 4, 3,
 	}
 
 	states := [64]GemState{}
 	states[7*8+2] = StateFire
-	states[5*8+7] = StateStar
+	states[5*8+5] = StateStar
 	states[1*8+6] = StateHypercube
 
 	bonusTimes := [64]uint32{}
@@ -207,7 +213,7 @@ func TestFindBestMovePlus5(t *testing.T) {
 
 	states := [64]GemState{}
 	states[7*8+2] = StateFire
-	states[5*8+7] = StateStar
+	states[5*8+5] = StateStar
 	states[1*8+6] = StateHypercube
 
 	bonusTimes := [64]uint32{}
@@ -230,7 +236,7 @@ func TestFindBestMovePlus10(t *testing.T) {
 
 	states := [64]GemState{}
 	states[7*8+2] = StateFire
-	states[5*8+7] = StateStar
+	states[5*8+5] = StateStar
 	states[1*8+6] = StateHypercube
 
 	bonusTimes := [64]uint32{}
@@ -254,7 +260,7 @@ func TestFindBestMovePlus10Deep(t *testing.T) {
 
 	states := [64]GemState{}
 	states[7*8+2] = StateFire
-	states[5*8+7] = StateStar
+	states[5*8+5] = StateStar
 	states[1*8+6] = StateHypercube
 
 	bonusTimes := [64]uint32{}
@@ -262,4 +268,26 @@ func TestFindBestMovePlus10Deep(t *testing.T) {
 	bonusTimes[2*8+1] = 10
 
 	testFindBestMove(t, layout, states, bonusTimes, 0, 7, 1, 7)
+}
+
+func TestFindBestMove6MatchDeep(t *testing.T) {
+	layout := [64]int{
+		2, 1, 2, 3, 1, 2, 3, 4,
+		2, 3, 4, 1, 2, 3, 4, 3,
+		3, 6, 5, 5, 1, 2, 0, 4,
+		5, 5, 0, 0, 5, 5, 4, 1,
+		1, 2, 3, 4, 1, 2, 3, 0,
+		2, 3, 4, 1, 6, 6, 4, 6,
+		1, 2, 3, 4, 1, 2, 3, 4,
+		0, 1, 0, 0, 2, 3, 4, 3,
+	}
+
+	states := [64]GemState{}
+	states[7*8+2] = StateFire
+	states[5*8+5] = StateStar
+	states[1*8+6] = StateHypercube
+
+	bonusTimes := [64]uint32{}
+
+	testFindBestMove(t, layout, states, bonusTimes, 6, 1, 6, 2)
 }
