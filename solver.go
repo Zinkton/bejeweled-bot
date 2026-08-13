@@ -1,176 +1,129 @@
 package main
 
 import (
-	"fmt"
-	"math/rand"
+	"cmp"
+	"slices"
 )
 
-type GemColor uint8
+// GetSortedMoves evaluates all possible moves on the board and sorts them by score.
+func GetSortedMoves(b *Board) []Move {
+	legalMoves := b.GenerateLegalMoves()
 
-const (
-	Empty GemColor = iota
-	Red
-	Orange
-	Yellow
-	Green
-	Blue
-	Purple
-	White
-)
+	slices.SortFunc(legalMoves, func(a, b Move) int {
+		return cmp.Compare(b.Score, a.Score)
+	})
 
-type Move struct {
-	Row      int
-	Col      int
-	Dir      string
-	Priority int
+	return legalMoves
 }
 
-func (g GemColor) String() string {
-	names := []string{"Empty", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "White"}
-	if int(g) < len(names) {
-		return names[g]
-	}
-	return "Unknown"
-}
+// GenerateLegalMoves scans the board and returns a list of all valid moves.
+func (b *Board) GenerateLegalMoves() []Move {
+	var legalMoves []Move
 
-func gemToAscii(g GemColor) string {
-	ascii := []string{
-		" . ",
-		"\033[31m ♦ \033[0m",
-		"\033[38;5;214m ▲ \033[0m",
-		"\033[33m ★ \033[0m",
-		"\033[32m ■ \033[0m",
-		"\033[34m ▼ \033[0m",
-		"\033[35m ● \033[0m",
-		"\033[37m ✦ \033[0m",
-	}
-	if int(g) < len(ascii) {
-		return ascii[g]
-	}
-	return " ? "
-}
+	// Create a copy of the board state to simulate making moves safely
+	simState := b.State
+	// Mark matched gems to not interfere with them
+	markMatchedGems(&simState)
 
-func gemToPlainText(g GemColor) string {
-	chars := []string{" . ", " R ", " O ", " Y ", " G ", " B ", " P ", " W "}
-	if int(g) < len(chars) {
-		return chars[g]
-	}
-	return " ? "
-}
+	// Iterate through all 64 spaces on the 8x8 grid
+	for y := range 8 {
+		for x := range 8 {
+			idx := y*8 + x
 
-func printGrid(grid [8][8]GemColor) {
-	fmt.Println("--- Bejeweled Grid ---")
-	for _, row := range grid {
-		for _, gem := range row {
-			fmt.Print(gemToAscii(gem))
-		}
-		fmt.Println()
-	}
-	fmt.Println("----------------------")
-}
-
-func generateGrid() [8][8]GemColor {
-	var grid [8][8]GemColor
-	for r := range 8 {
-		for c := range 8 {
-			var newColor GemColor
-			for {
-				newColor = GemColor(rand.Intn(7) + 1)
-				if c >= 2 && grid[r][c-1] == newColor && grid[r][c-2] == newColor {
-					continue
+			// 1. Try swapping Right (if we are not on the right edge)
+			if x < 7 {
+				rightIdx := idx + 1
+				score := b.evaluateSwap(idx, rightIdx, simState)
+				if score > 0 {
+					legalMoves = append(legalMoves, Move{
+						Index1: idx,
+						Index2: rightIdx,
+						Score:  score,
+					})
 				}
-				if r >= 2 && grid[r-1][c] == newColor && grid[r-2][c] == newColor {
-					continue
-				}
-				break
 			}
-			grid[r][c] = newColor
+
+			// 2. Try swapping Down (if we are not on the bottom edge)
+			if y < 7 {
+				downIdx := idx + 8
+				score := b.evaluateSwap(idx, downIdx, simState)
+				if score > 0 {
+					legalMoves = append(legalMoves, Move{
+						Index1: idx,
+						Index2: downIdx,
+						Score:  score,
+					})
+				}
+			}
 		}
 	}
-	return grid
+
+	legalMoves = append(legalMoves, Move{})
+
+	return legalMoves
 }
 
-// clearMatches finds active 3+ streaks and clears those gems AND everything above them.
-// This acts as a lightweight gravity simulator so subsequent queued moves ignore falling zones.
-func clearMatches(grid *[8][8]GemColor) bool {
-	var toClear [8][8]bool
-	foundAny := false
-
-	for r := range 8 {
-		for c := range 6 {
-			color := grid[r][c]
-			if color == Empty {
+func markMatchedGems(grid *[64]Gem) {
+	for y := range 8 {
+		for x := range 6 {
+			gem := grid[y*8+x]
+			if gem.Color == ColorNone {
 				continue
 			}
-			if grid[r][c+1] == color && grid[r][c+2] == color {
-				toClear[r][c] = true
-				toClear[r][c+1] = true
-				toClear[r][c+2] = true
-				foundAny = true
-				for i := c + 3; i < 8 && grid[r][i] == color; i++ {
-					toClear[r][i] = true
+			if grid[y*8+x+1].Color == gem.Color && grid[y*8+x+2].Color == gem.Color {
+				grid[y*8+x].IsMatched = true
+				grid[y*8+x+1].IsMatched = true
+				grid[y*8+x+2].IsMatched = true
+				for i := x + 3; i < 8 && grid[y*8+i].Color == gem.Color; i++ {
+					grid[y*8+i].IsMatched = true
 				}
 			}
 		}
 	}
 
-	for c := range 8 {
-		for r := range 6 {
-			color := grid[r][c]
-			if color == Empty {
+	for x := range 8 {
+		for y := range 6 {
+			gem := grid[y*8+x]
+			if gem.Color == ColorNone {
 				continue
 			}
-			if grid[r+1][c] == color && grid[r+2][c] == color {
-				toClear[r][c] = true
-				toClear[r+1][c] = true
-				toClear[r+2][c] = true
-				foundAny = true
-				for i := r + 3; i < 8 && grid[i][c] == color; i++ {
-					toClear[i][c] = true
+			if grid[(y+1)*8+x].Color == gem.Color && grid[(y+2)*8+x].Color == gem.Color {
+				grid[y*8+x].IsMatched = true
+				grid[(y+1)*8+x].IsMatched = true
+				grid[(y+2)*8+x].IsMatched = true
+				for i := y + 3; i < 8 && grid[i*8+x].Color == gem.Color; i++ {
+					grid[i*8+x].IsMatched = true
 				}
 			}
 		}
 	}
-
-	if !foundAny {
-		return false
-	}
-
-	for r := range 8 {
-		for c := range 8 {
-			if toClear[r][c] {
-				for i := r; i >= 0; i-- {
-					grid[i][c] = Empty
-				}
-			}
-		}
-	}
-
-	return true
 }
 
-func checkLineMatch(grid [8][8]GemColor, r, c int) (bool, int) {
-	color := grid[r][c]
-	if color == Empty {
-		return false, 99
+func checkLineMatch(grid *[64]Gem, idx int) (MatchType, []int) {
+	gem := grid[idx]
+	if gem.Color == ColorNone || gem.IsMatched {
+		return MatchTypeNone, nil
 	}
 
-	left := c
-	for left > 0 && grid[r][left-1] == color {
+	x := idx % 8
+	y := idx / 8
+
+	left := x
+	for left > 0 && grid[y*8+left-1].Color == gem.Color && !grid[y*8+left-1].IsMatched {
 		left--
 	}
-	right := c
-	for right < 7 && grid[r][right+1] == color {
+	right := x
+	for right < 7 && grid[y*8+right+1].Color == gem.Color && !grid[y*8+right+1].IsMatched {
 		right++
 	}
 	horiz := right - left + 1
 
-	up := r
-	for up > 0 && grid[up-1][c] == color {
+	up := y
+	for up > 0 && grid[(up-1)*8+x].Color == gem.Color && !grid[(up-1)*8+x].IsMatched {
 		up--
 	}
-	down := r
-	for down < 7 && grid[down+1][c] == color {
+	down := y
+	for down < 7 && grid[(down+1)*8+x].Color == gem.Color && !grid[(down+1)*8+x].IsMatched {
 		down++
 	}
 	vert := down - up + 1
@@ -180,83 +133,244 @@ func checkLineMatch(grid [8][8]GemColor, r, c int) (bool, int) {
 	is4 := horiz == 4 || vert == 4
 	is3 := horiz >= 3 || vert >= 3
 
+	// If there's no valid match of 3 or more in either direction, exit early
+	if !is3 {
+		return MatchTypeNone, nil
+	}
+
+	// Collect matched indices
+	var matchedIndices []int
+
+	if horiz >= 3 {
+		for i := left; i <= right; i++ {
+			matchedIndices = append(matchedIndices, y*8+i)
+		}
+	}
+
+	if vert >= 3 {
+		for j := up; j <= down; j++ {
+			// Skip the center node (idx) if it was already added by horizontal check
+			if horiz >= 3 && j == y {
+				continue
+			}
+			matchedIndices = append(matchedIndices, j*8+x)
+		}
+	}
+
+	// Determine match type
 	if is5 {
-		return true, 2
+		return MatchType5, matchedIndices
 	}
 	if isLOrT {
-		return true, 3
+		return MatchTypeL, matchedIndices
 	}
 	if is4 {
-		return true, 4
-	}
-	if is3 {
-		return true, 5
+		return MatchType4, matchedIndices
 	}
 
-	return false, 99
+	return MatchType3, matchedIndices
 }
 
-func testSwap(gridCopy [8][8]GemColor, r1, c1, r2, c2 int) (bool, int) {
-	gridCopy[r1][c1], gridCopy[r2][c2] = gridCopy[r2][c2], gridCopy[r1][c1]
+func (b *Board) evaluateSwap(idx1, idx2 int, state [64]Gem) int {
+	gem1 := state[idx1]
+	gem2 := state[idx2]
 
-	match1, p1 := checkLineMatch(gridCopy, r1, c1)
-	match2, p2 := checkLineMatch(gridCopy, r2, c2)
-
-	if match1 || match2 {
-		if match1 && match2 {
-			if p1 < p2 {
-				return true, p1
-			}
-			return true, p2
-		}
-		if match1 {
-			return true, p1
-		}
-		return true, p2
+	if gem1.Color == ColorNone || gem2.Color == ColorNone || gem1.IsMatched || gem2.IsMatched {
+		return 0
 	}
 
-	return false, 99
-}
+	if gem1.State == StateHypercube && gem2.State == StateHypercube {
+		return 10000
+	}
 
-func applyMove(grid *[8][8]GemColor, r1, c1, r2, c2 int) {
-	grid[r1][c1], grid[r2][c2] = grid[r2][c2], grid[r1][c1]
-	clearMatches(grid)
-}
+	var destroyedGemIdxs []int
 
-func findAllMoves(grid [8][8]GemColor) []Move {
-	var moves []Move
-	gridPtr := &grid
+	if gem1.State == StateHypercube {
+		destroyedGemIdxs = append(destroyedGemIdxs, idx1)
 
-	// Wipe out mid-animation exploding gems from the board evaluation
-	clearMatches(gridPtr)
+		return evaluateCascade(destroyedGemIdxs, &state, []GemColor{gem2.Color})
+	}
 
-	// Search for priorities 2 through 5
-	for priority := 2; priority <= 5; priority++ {
-		for r := range 8 {
-			for c := range 8 {
-				if gridPtr[r][c] == Empty {
-					continue
-				}
+	if gem2.State == StateHypercube {
+		destroyedGemIdxs = append(destroyedGemIdxs, idx2)
 
-				// Check Right Swap
-				if c < 7 && gridPtr[r][c+1] != Empty {
-					if isValid, p := testSwap(*gridPtr, r, c, r, c+1); isValid && p == priority {
-						applyMove(gridPtr, r, c, r, c+1)
-						moves = append(moves, Move{Row: r, Col: c, Dir: "Right", Priority: p})
-						continue // Move to next cell since this one just exploded
-					}
-				}
+		return evaluateCascade(destroyedGemIdxs, &state, []GemColor{gem1.Color})
+	}
 
-				// Check Down Swap
-				if r < 7 && gridPtr[r+1][c] != Empty {
-					if isValid, p := testSwap(*gridPtr, r, c, r+1, c); isValid && p == priority {
-						applyMove(gridPtr, r, c, r+1, c)
-						moves = append(moves, Move{Row: r, Col: c, Dir: "Down", Priority: p})
-					}
-				}
+	state[idx1], state[idx2] = state[idx2], state[idx1]
+
+	// Check if swapping them creates a match at either of their new positions
+	matchType1, matchIdxs1 := checkLineMatch(&state, idx1)
+	matchType2, matchIdxs2 := checkLineMatch(&state, idx2)
+
+	swapScore := max(0, int(matchType1)-1)*10 + max(0, int(matchType2)-1)*10
+	for i := range matchIdxs1 {
+		destroyedGemIdxs = append(destroyedGemIdxs, i)
+	}
+
+	for i := range matchIdxs2 {
+		destroyedGemIdxs = append(destroyedGemIdxs, i)
+	}
+
+	var colorTriggers []GemColor
+
+	if matchType1 != MatchTypeNone && b.IsBlazingSpeed {
+		match1ExplosionIds := getExplosionIdxs(&state, idx1)
+		destroyedGemIdxs = append(destroyedGemIdxs, match1ExplosionIds...)
+
+		for i := range match1ExplosionIds {
+			if state[i].State == StateHypercube {
+				colorTriggers = append(colorTriggers, state[idx1].Color)
 			}
 		}
 	}
 
-	return moves
+	if matchType2 != MatchTypeNone && b.IsBlazingSpeed {
+		match2ExplosionIds := getExplosionIdxs(&state, idx2)
+		destroyedGemIdxs = append(destroyedGemIdxs, match2ExplosionIds...)
+
+		for i := range match2ExplosionIds {
+			if state[i].State == StateHypercube {
+				colorTriggers = append(colorTriggers, state[idx2].Color)
+			}
+		}
+	}
+
+	if len(destroyedGemIdxs) == 0 {
+		return 0
+	}
+
+	slices.Sort(destroyedGemIdxs)
+	destroyedGemIdxs = slices.Compact(destroyedGemIdxs)
+
+	slices.Sort(colorTriggers)
+	colorTriggers = slices.Compact(colorTriggers)
+
+	swapScore += evaluateCascade(destroyedGemIdxs, &state, colorTriggers)
+
+	return int(swapScore)
+}
+
+func getExplosionIdxs(currentState *[64]Gem, explosionIdx int) []int {
+	row := explosionIdx / 8
+	col := explosionIdx % 8
+
+	// Allocate capacity up to 8 neighbors
+	neighbors := make([]int, 0, 8)
+
+	// Check all 8 direction offsets
+	for dr := -1; dr <= 1; dr++ {
+		for dc := -1; dc <= 1; dc++ {
+			// Skip the center cell
+			if dr == 0 && dc == 0 {
+				continue
+			}
+
+			newRow := row + dr
+			newCol := col + dc
+
+			// Verify row and column boundaries
+			if newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8 {
+				newIndex := newRow*8 + newCol
+				// Verify the gem exists at index
+				if !currentState[newIndex].IsEmpty() {
+					neighbors = append(neighbors, newIndex)
+				}
+			}
+		}
+	}
+
+	return neighbors
+}
+
+func getStarIdxs(currentState *[64]Gem, starIdx int) []int {
+	row := starIdx / 8
+	col := starIdx % 8
+
+	// Max 14 possible line-of-sight neighbors in an 8x8 grid (7 horizontal + 7 vertical)
+	rays := make([]int, 0, 14)
+
+	// Up
+	for r := row - 1; r >= 0; r-- {
+		newIdx := r*8 + col
+		// Verify the gem exists at index, !Gem.IsEmpty() helper?
+		if !currentState[newIdx].IsEmpty() {
+			rays = append(rays, newIdx)
+		}
+	}
+
+	// Down
+	for r := row + 1; r < 8; r++ {
+		newIdx := r*8 + col
+		// Verify the gem exists at index, !Gem.IsEmpty() helper?
+		if !currentState[newIdx].IsEmpty() {
+			rays = append(rays, newIdx)
+		}
+	}
+
+	// Left
+	for c := col - 1; c >= 0; c-- {
+		newIdx := row*8 + c
+		// Verify the gem exists at index, !Gem.IsEmpty() helper?
+		if !currentState[newIdx].IsEmpty() {
+			rays = append(rays, newIdx)
+		}
+	}
+
+	// Right
+	for c := col + 1; c < 8; c++ {
+		newIdx := row*8 + c
+		// Verify the gem exists at index, !Gem.IsEmpty() helper?
+		if !currentState[newIdx].IsEmpty() {
+			rays = append(rays, newIdx)
+		}
+	}
+
+	return rays
+}
+
+func (g *Gem) Clear() {
+	g.Color = ColorNone
+	g.State = StateNormal
+}
+
+func (g *Gem) IsEmpty() bool {
+	return g.Color == ColorNone && g.State == StateNormal || g.IsMatched
+}
+
+func evaluateCascade(destroyedGemIdxs []int, currentState *[64]Gem, colorTriggers []GemColor) int {
+	score := 0
+
+	for i := range destroyedGemIdxs {
+		if currentState[i].IsEmpty() {
+			continue
+		}
+
+		score++
+		score += int(currentState[i].BonusTimeAmnt) * 1000
+
+		newTriggerColor := currentState[i].Color
+
+		newDestroyedGemIdxs := []int{}
+		switch currentState[i].State {
+		case StateFire:
+			newDestroyedGemIdxs = getExplosionIdxs(currentState, i)
+		case StateHypercube:
+			for j := range 64 {
+				g := currentState[j]
+
+				if slices.Contains(colorTriggers, g.Color) {
+					newDestroyedGemIdxs = append(newDestroyedGemIdxs, j)
+				}
+			}
+		case StateStar:
+			newDestroyedGemIdxs = getStarIdxs(currentState, i)
+		}
+
+		currentState[i].Clear()
+
+		score += evaluateCascade(newDestroyedGemIdxs, currentState, []GemColor{newTriggerColor})
+	}
+
+	return score
 }

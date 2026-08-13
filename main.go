@@ -2,199 +2,252 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"image/color"
+	"log"
 
-	"github.com/go-vgo/robotgo"
-	"golang.design/x/hotkey"
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-type Bot struct {
-	AnchorX int
-	AnchorY int
-	StepX   float64
-	StepY   float64
+// --- Enums ---
 
-	HasTopLeft  bool
-	HasBotRight bool
-	IsRunning   bool
-
-	MoveHistory []string
+type Game struct {
+	Board        Board
+	ProcessFound bool
+	IsActive     bool
+	LastTimer    uint32
 }
 
-func main() {
-	fmt.Println("Bejeweled Bot Initialized!")
-	fmt.Println("1. Hover Top-Left gem and press 'Ctrl + Shift + X'")
-	fmt.Println("2. Hover Bottom-Right gem and press 'Ctrl + Shift + C'")
-	fmt.Println("3. Press 'Ctrl + Shift + Z' to toggle the bot ON/OFF.")
-	fmt.Println("Press 'Ctrl + C' in this terminal to quit completely.")
+// --- Main Loop ---
 
-	bot := &Bot{}
-
-	go bot.ListenForTopLeft()
-	go bot.ListenForBottomRight()
-	go bot.Worker()
-
-	botHk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyZ)
-	botHk.Register()
-	defer botHk.Unregister()
-
-	for {
-		<-botHk.Keydown()
-		bot.Toggle()
-	}
-}
-
-func (b *Bot) ListenForTopLeft() {
-	hk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyX)
-	hk.Register()
-	defer hk.Unregister()
-
-	for {
-		<-hk.Keydown()
-		x, y := robotgo.Location()
-		b.AnchorX = x
-		b.AnchorY = y
-		b.HasTopLeft = true
-		fmt.Printf("\n[Calibrated] Top-Left Gem anchored at X: %d, Y: %d\n", x, y)
-	}
-}
-
-func (b *Bot) ListenForBottomRight() {
-	hk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyC)
-	hk.Register()
-	defer hk.Unregister()
-
-	for {
-		<-hk.Keydown()
-		if !b.HasTopLeft {
-			fmt.Println("\n[Warning] Please calibrate the Top-Left gem first!")
-			continue
+func (g *Game) Update() error {
+	// If process isn't found, try to attach to it every frame until it works
+	if !g.ProcessFound {
+		// Note: Check task manager. Sometimes it is "bejeweled3.exe"
+		if AttachToProcess("bejeweled.exe") || AttachToProcess("bejeweled3.exe") {
+			g.ProcessFound = true
+			fmt.Println("Process found! Base address:", fmt.Sprintf("%X", baseAddress))
 		}
-
-		x, y := robotgo.Location()
-		b.StepX = float64(x-b.AnchorX) / 7.0
-		b.StepY = float64(y-b.AnchorY) / 7.0
-		b.HasBotRight = true
-
-		fmt.Printf("\n[Calibrated] Bottom-Right Gem anchored at X: %d, Y: %d\n", x, y)
-		fmt.Printf("[Success] Grid spacing calculated -> X: %.2fpx, Y: %.2fpx\n", b.StepX, b.StepY)
+		return nil
 	}
+
+	g.parseBoard()
+
+	return nil
 }
 
-func (b *Bot) Toggle() {
-	if !b.HasTopLeft || !b.HasBotRight {
-		fmt.Println("\n[Error] Please calibrate BOTH corners of the board first!")
+func (g *Game) Draw(screen *ebiten.Image) {
+	// 1. Draw Blazing Speed Tint (Background)
+	if g.Board.IsBlazingSpeed {
+		bounds := screen.Bounds()
+		vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.NRGBA{255, 128, 0, 100}, false)
+	}
+
+	if !g.ProcessFound {
+		ebitenutil.DebugPrint(screen, "Searching for bejeweled.exe...")
 		return
 	}
 
-	b.IsRunning = !b.IsRunning
+	ebitenutil.DebugPrint(screen, "Bejeweled 3 Board Data\n(Press Esc to exit)")
 
-	if b.IsRunning {
-		fmt.Println("\n[▶] Bot STARTED! Press 'Ctrl + Shift + Z' to pause.")
-		b.MoveHistory = nil
+	// 2. Draw Paused state
+	if !g.IsActive {
+		ebitenutil.DebugPrintAt(screen, "=== PAUSED ===", 300, 20)
+	}
+
+	// 3. Draw the 8x8 grid
+	startX, startY := 50, 50
+	tileSize := float32(40)
+	spacing := float32(5)
+
+	for i, gem := range g.Board.State {
+		x := float32(startX) + float32(i%8)*(tileSize+spacing)
+		y := float32(startY) + float32(i/8)*(tileSize+spacing)
+
+		// Draw the Gem Core (Shape or Hypercube)
+		if gem.State == StateHypercube {
+			drawHypercube(screen, x, y, tileSize)
+		} else {
+			gemColor := getGemColor(gem.Color)
+			drawGemShape(screen, x, y, tileSize, gem.Color, gemColor)
+		}
+
+		// Draw State Outlines (Fire / Star)
+		switch gem.State {
+		case StateFire:
+			drawOutline(screen, x, y, tileSize, 5, color.RGBA{255, 0, 0, 255}) // Red outline
+		case StateStar:
+			drawOutline(screen, x, y, tileSize, 5, color.RGBA{255, 255, 255, 255}) // White outline
+		}
+
+		// Draw Bonus Time text
+		if gem.BonusTimeAmnt > 0 {
+			text := fmt.Sprintf("+%d", gem.BonusTimeAmnt)
+
+			vector.FillRect(screen, x+4, y+10, 30, 16, color.NRGBA{0, 0, 0, 120}, false)
+			ebitenutil.DebugPrintAt(screen, text, int(x)+6, int(y)+10)
+		}
+	}
+}
+
+func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
+	return 640, 480
+}
+
+// --- Memory parsing ---
+func (g *Game) parseBoard() {
+	if processHandle == 0 {
+		return
+	}
+
+	// state = bejeweled.exe + 004E170C + 360 + A0
+	ptr1, err := ReadUint32(baseAddress + 0x004E170C)
+	if err != nil || ptr1 == 0 {
+		return
+	}
+
+	ptr2, err := ReadUint32(ptr1 + 0x360)
+	if err != nil || ptr2 == 0 {
+		return
+	}
+
+	state, err := ReadUint32(ptr2 + 0xA0)
+	if err != nil || state == 0 {
+		return
+	}
+
+	// Blazing Speed (state + 10A0)
+	blazing, _ := ReadUint32(state + 0x10A0)
+	g.Board.IsBlazingSpeed = (blazing > 0)
+
+	// Timer check (state + D68)
+	timer, _ := ReadUint32(state + 0xD68)
+	if timer != g.LastTimer {
+		g.IsActive = true
+		g.LastTimer = timer
 	} else {
-		fmt.Println("\n[⏸] Bot PAUSED! Press 'Ctrl + Shift + Z' to resume.")
+		g.IsActive = false
 	}
-}
 
-func (b *Bot) Worker() {
-	for {
-		if !b.IsRunning {
-			time.Sleep(100 * time.Millisecond)
+	topLeftGemPtr := uint32(state + 0xF8)
+
+	// Loop through all 64 gems (+4 bytes each)
+	for i := range 64 {
+		gemPtr, err := ReadUint32(topLeftGemPtr + uint32(i*4))
+		if err != nil || gemPtr == 0 {
+			// Clear it out if it fails to read (e.g. board is resetting)
+			g.Board.State[i] = Gem{}
 			continue
 		}
 
-		currentGrid, _ := b.parseBoard()
-		moves := findAllMoves(currentGrid)
+		// Read these as 1 byte (uint8)
+		colorVal, _ := ReadUint8(gemPtr + 0x220)
+		stateVal, _ := ReadUint8(gemPtr + 0x228)
+		otherStateVal, _ := ReadUint8(gemPtr + 0x22A)
+		bonusTimeAmnt, _ := ReadUint8(gemPtr + 0x244)
 
-		if len(moves) == 0 {
-			b.MoveHistory = nil
-			time.Sleep(10 * time.Millisecond)
-			continue
+		bonus := uint32(0)
+		if otherStateVal == 2 {
+			bonus = uint32(bonusTimeAmnt)
 		}
 
-		usedCells := make(map[string]bool)
-
-		cycleLength := 0
-		movesExecuted := 0
-
-		for _, m := range moves {
-			targetID := fmt.Sprintf("%d,%d", m.Row, m.Col)
-			if usedCells[targetID] {
-				continue
-			}
-
-			b.ExecuteMove(m)
-			usedCells[targetID] = true
-			movesExecuted++
-
-			moveStr := fmt.Sprintf("%d,%d,%s", m.Row, m.Col, m.Dir)
-
-			if k := b.trackAndCheckCycle(moveStr); k > 0 {
-				cycleLength = k
-			}
-
-			time.Sleep(10 * time.Millisecond)
+		g.Board.State[i] = Gem{
+			Color:         GemColor(colorVal),
+			State:         GemState(stateVal),
+			BonusTimeAmnt: bonus,
 		}
-
-		if cycleLength > 0 && movesExecuted <= cycleLength {
-			fmt.Println("   -> [!] Phantom cycle (3x) detected! Waiting 500ms for board to snap back...")
-			time.Sleep(500 * time.Millisecond)
-			b.MoveHistory = nil
-		}
-
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-func (b *Bot) ExecuteMove(m Move) {
-	screenX := b.AnchorX + int(float64(m.Col)*b.StepX)
-	screenY := b.AnchorY + int(float64(m.Row)*b.StepY)
+// --- Drawing Helpers ---
 
-	robotgo.Move(screenX, screenY)
-	robotgo.Click("left")
+// drawOutline draws a hollow rectangle manually using 4 filled rectangles
+func drawOutline(screen *ebiten.Image, x, y, size, thickness float32, clr color.Color) {
+	vector.FillRect(screen, x, y, size, thickness, clr, false)                // Top
+	vector.FillRect(screen, x, y+size-thickness, size, thickness, clr, false) // Bottom
+	vector.FillRect(screen, x, y, thickness, size, clr, false)                // Left
+	vector.FillRect(screen, x+size-thickness, y, thickness, size, clr, false) // Right
+}
 
-	switch m.Dir {
-	case "Right":
-		robotgo.KeyTap("right")
-	case "Down":
-		robotgo.KeyTap("down")
-	case "Left":
-		robotgo.KeyTap("left")
-	case "Up":
-		robotgo.KeyTap("up")
+// drawHypercube draws 6 colored blocks smushed together, now with padding
+func drawHypercube(screen *ebiten.Image, x, y, size float32) {
+	p := float32(6) // Add padding so it doesn't take up the whole tile
+	innerSize := size - p*2
+	w := innerSize / 3
+	h := innerSize / 2
+	colors := []color.Color{
+		getGemColor(ColorRed), getGemColor(ColorWhite), getGemColor(ColorGreen),
+		getGemColor(ColorYellow), getGemColor(ColorPurple), getGemColor(ColorBlue),
+	}
+
+	// Draw the dark tile background first
+	vector.FillRect(screen, x, y, size, size, color.RGBA{30, 30, 30, 255}, false)
+
+	for i, clr := range colors {
+		col := float32(i % 3)
+		row := float32(i / 3)
+		vector.FillRect(screen, x+p+col*w, y+p+row*h, w, h, clr, false)
 	}
 }
 
-func (b *Bot) trackAndCheckCycle(move string) int {
-	b.MoveHistory = append(b.MoveHistory, move)
+// drawGemShape uses simple geometry to differentiate gem colors visually
+func drawGemShape(screen *ebiten.Image, x, y, size float32, c GemColor, clr color.Color) {
+	p := float32(10)
 
-	if len(b.MoveHistory) > 30 {
-		b.MoveHistory = b.MoveHistory[len(b.MoveHistory)-30:]
+	// Draw a dark background for the tile first
+	vector.FillRect(screen, x, y, size, size, color.RGBA{30, 30, 30, 255}, false)
+
+	switch c {
+	case ColorRed:
+		vector.FillRect(screen, x+p, y+p, size-p*2, size-p*2, clr, false)
+	case ColorWhite:
+		vector.FillRect(screen, x+size/2.5, y+size/2.5, size-(size/2.5)*2, size-(size/2.5)*2, clr, false)
+	case ColorGreen:
+		vector.FillRect(screen, x+size/2-p/2, y+p, p, size-p*2, clr, false)
+	case ColorYellow:
+		vector.FillRect(screen, x+p, y+size/2-p/2, size-p*2, p, clr, false)
+	case ColorPurple:
+		vector.FillRect(screen, x+size/2-p/4, y+p, p/2, size-p*2, clr, false)
+		vector.FillRect(screen, x+p, y+size/2-p/4, size-p*2, p/2, clr, false)
+	case ColorOrange:
+		vector.FillRect(screen, x+p, y+p, p/1.5, size-p*2, clr, false)
+		vector.FillRect(screen, x+size-p-p/1.5, y+p, p/1.5, size-p*2, clr, false)
+	case ColorBlue:
+		drawOutline(screen, x+p, y+p, size-p*2, 3, clr)
+	default:
+		vector.FillRect(screen, x+p, y+p, size-p*2, size-p*2, color.RGBA{100, 100, 100, 255}, false)
 	}
+}
 
-	n := len(b.MoveHistory)
-	maxCycleLen := 5
-
-	for k := 1; k <= maxCycleLen; k++ {
-		if n >= 3*k {
-			chunk1 := b.MoveHistory[n-k : n]
-			chunk2 := b.MoveHistory[n-2*k : n-k]
-			chunk3 := b.MoveHistory[n-3*k : n-2*k]
-
-			isMatch := true
-			for i := range chunk1 {
-				if chunk1[i] != chunk2[i] || chunk2[i] != chunk3[i] {
-					isMatch = false
-					break
-				}
-			}
-
-			if isMatch {
-				return k
-			}
-		}
+func getGemColor(c GemColor) color.Color {
+	switch c {
+	case ColorRed:
+		return color.RGBA{255, 50, 50, 255}
+	case ColorWhite:
+		return color.RGBA{255, 255, 255, 255}
+	case ColorGreen:
+		return color.RGBA{50, 255, 50, 255}
+	case ColorYellow:
+		return color.RGBA{255, 255, 50, 255}
+	case ColorPurple:
+		return color.RGBA{200, 50, 255, 255}
+	case ColorOrange:
+		return color.RGBA{255, 150, 50, 255}
+	case ColorBlue:
+		return color.RGBA{50, 150, 255, 255}
+	default:
+		return color.RGBA{50, 50, 50, 255}
 	}
+}
 
-	return 0
+func main() {
+	ebiten.SetWindowSize(640, 480)
+	ebiten.SetWindowTitle("Bejeweled Bot - Debug Window")
+
+	game := &Game{}
+
+	if err := ebiten.RunGame(game); err != nil {
+		log.Fatal(err)
+	}
 }
