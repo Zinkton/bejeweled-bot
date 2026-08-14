@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -273,13 +274,23 @@ func getGemColor(c GemColor) color.Color {
 }
 
 func main() {
+	geom, err := GetGameGeometry()
+	if err != nil {
+		log.Fatal("Could not locate Bejeweled 3 window:", err)
+	}
 
-	// ebiten.SetWindowSize(640, 480)
-	// ebiten.SetWindowTitle("Bejeweled Bot - Debug Window")
+	bot := &BotController{
+		IsEnabled: true,
+		Geom:      geom,
+	}
 
-	// game := &Game{}
+	game := &Game{}
+	game.StartBotWorker(bot)
 
-	// if err := ebiten.RunGame(game); err != nil {
-	// 	log.Fatal(err)
-	// }
+	ebiten.SetWindowSize(640, 480)
+	ebiten.SetWindowTitle("Bejeweled Bot - Debug Window")
+
+	if err := ebiten.RunGame(game); err != nil {
+		log.Fatal(err)
+	}
 }

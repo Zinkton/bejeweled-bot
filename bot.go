@@ -1,3 +1,7 @@
+package main
+
+import "time"
+
 type BotController struct {
 	IsEnabled bool
 	Geom      *WindowBounds
