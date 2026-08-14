@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"image/color"
-	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -17,6 +16,10 @@ type Game struct {
 	ProcessFound bool
 	IsActive     bool
 	LastTimer    uint32
+
+	CachedBestMove     *Move
+	LastEvaluatedBoard [64]Gem
+	HasCalculatedMove  bool
 }
 
 // --- Main Loop ---
@@ -25,14 +28,18 @@ func (g *Game) Update() error {
 	// If process isn't found, try to attach to it every frame until it works
 	if !g.ProcessFound {
 		// Note: Check task manager. Sometimes it is "bejeweled3.exe"
-		if AttachToProcess("bejeweled.exe") || AttachToProcess("bejeweled3.exe") {
+		if AttachToProcess("bejeweled3.exe") {
 			g.ProcessFound = true
 			fmt.Println("Process found! Base address:", fmt.Sprintf("%X", baseAddress))
 		}
 		return nil
 	}
 
+	// 1. Read latest state from memory
 	g.parseBoard()
+
+	// 2. Refresh / cache the best move
+	g.updateBestMove()
 
 	return nil
 }
@@ -73,11 +80,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			drawGemShape(screen, x, y, tileSize, gem.Color, gemColor)
 		}
 
-		// Draw State Outlines (Fire / Star)
+		// Draw State Outlines (Fire / Star / Supernova)
 		switch gem.State {
 		case StateFire:
 			drawOutline(screen, x, y, tileSize, 5, color.RGBA{255, 0, 0, 255}) // Red outline
 		case StateStar:
+			drawOutline(screen, x, y, tileSize, 5, color.RGBA{0, 0, 255, 255}) // Blue outline
+		case StateSupernova:
 			drawOutline(screen, x, y, tileSize, 5, color.RGBA{255, 255, 255, 255}) // White outline
 		}
 
@@ -93,6 +102,28 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
 	return 640, 480
+}
+
+func (g *Game) updateBestMove() {
+	// 1. If the board hasn't changed since last calculation and we already have a move,
+	// reuse the cached move immediately (0 CPU cost)
+	if g.HasCalculatedMove && g.Board.State == g.LastEvaluatedBoard || !g.IsActive {
+		return
+	}
+
+	// 2. Board state has changed! Run the solver
+	moves := GetSortedMoves(&g.Board, 2)
+
+	if len(moves) > 0 {
+		best := moves[0]
+		g.CachedBestMove = &best
+	} else {
+		g.CachedBestMove = nil
+	}
+
+	// 3. Update the tracking state and cache
+	g.LastEvaluatedBoard = g.Board.State
+	g.HasCalculatedMove = true
 }
 
 // --- Memory parsing ---
@@ -242,12 +273,13 @@ func getGemColor(c GemColor) color.Color {
 }
 
 func main() {
-	ebiten.SetWindowSize(640, 480)
-	ebiten.SetWindowTitle("Bejeweled Bot - Debug Window")
 
-	game := &Game{}
+	// ebiten.SetWindowSize(640, 480)
+	// ebiten.SetWindowTitle("Bejeweled Bot - Debug Window")
 
-	if err := ebiten.RunGame(game); err != nil {
-		log.Fatal(err)
-	}
+	// game := &Game{}
+
+	// if err := ebiten.RunGame(game); err != nil {
+	// 	log.Fatal(err)
+	// }
 }
