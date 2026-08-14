@@ -18,10 +18,15 @@ func buildTestBoard(layout [64]int, states [64]GemState, bonusTimes [64]uint32) 
 	return b
 }
 
-func testFindBestMove(t *testing.T, layout [64]int, states [64]GemState, bonusTimes [64]uint32, x1, y1, x2, y2 int) {
+func testFindBestMove(t *testing.T, layout [64]int, states [64]GemState, bonusTimes [64]uint32, depth, x1, y1, x2, y2 int) {
 	board := buildTestBoard(layout, states, bonusTimes)
 
-	bestMove := GetSortedMoves(&board)[0]
+	bestMove := GetSortedMoves(&board, depth)[0]
+	// PrintState(&board.State)
+	// score := 0
+	// score += board.Push(Move{Index1: 8 + 6, Index2: 2*8 + 6})
+	// PrintState(&board.State)
+	// println(score)
 
 	expectedIdx1 := (y1 * 8) + x1
 	expectedIdx2 := (y2 * 8) + x2
@@ -31,6 +36,14 @@ func testFindBestMove(t *testing.T, layout [64]int, states [64]GemState, bonusTi
 
 	if (bestMove.Index1 != expectedIdx1 || bestMove.Index2 != expectedIdx2) &&
 		(bestMove.Index1 != expectedIdx2 || bestMove.Index2 != expectedIdx1) {
+		// PrintState(&board.State)
+		// score := 0
+		// for d := depth; d >= 0; d-- {
+		// 	move := GetSortedMoves(&board, d)[0]
+		// 	score += board.Push(move)
+		// 	PrintState(&board.State)
+		// }
+		// println(score)
 		t.Errorf(
 			"Expected move between (%d,%d) and (%d,%d) [Indices %d, %d], got (%d,%d) and (%d,%d) [Indices %d, %d]",
 			x1, y1, x2, y2, expectedIdx1, expectedIdx2,
@@ -54,7 +67,7 @@ func TestFindBestMove3Match(t *testing.T) {
 	states := [64]GemState{}
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 0, 0, 1, 0)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 0, 0, 1, 0)
 }
 
 func TestFindBestMove4Match(t *testing.T) {
@@ -72,7 +85,7 @@ func TestFindBestMove4Match(t *testing.T) {
 	states := [64]GemState{}
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 1, 6, 1, 7)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 1, 6, 1, 7)
 }
 
 func TestFindBestMoveLMatch(t *testing.T) {
@@ -90,7 +103,7 @@ func TestFindBestMoveLMatch(t *testing.T) {
 	states := [64]GemState{}
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 7, 3, 6, 3)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 7, 3, 6, 3)
 }
 
 func TestFindBestMove5Match(t *testing.T) {
@@ -108,7 +121,7 @@ func TestFindBestMove5Match(t *testing.T) {
 	states := [64]GemState{}
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 1, 4, 0, 4)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 1, 4, 0, 4)
 }
 
 func TestFindBestMoveFireGem(t *testing.T) {
@@ -128,7 +141,7 @@ func TestFindBestMoveFireGem(t *testing.T) {
 
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 0, 7, 1, 7)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 0, 7, 1, 7)
 }
 
 func TestFindBestMoveStarGem(t *testing.T) {
@@ -149,7 +162,7 @@ func TestFindBestMoveStarGem(t *testing.T) {
 
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 6, 5, 7, 5)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 6, 5, 7, 5)
 }
 
 func TestFindBestMoveHyperCube(t *testing.T) {
@@ -171,7 +184,7 @@ func TestFindBestMoveHyperCube(t *testing.T) {
 
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 6, 0, 6, 1)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 6, 0, 6, 1)
 }
 
 func TestFindBestMoveDoubleHyperCube(t *testing.T) {
@@ -196,7 +209,7 @@ func TestFindBestMoveDoubleHyperCube(t *testing.T) {
 	bonusTimes := [64]uint32{}
 	bonusTimes[0] = 10
 
-	testFindBestMove(t, layout, states, bonusTimes, 6, 7, 7, 7)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 6, 7, 7, 7)
 }
 
 func TestFindBestMovePlus5(t *testing.T) {
@@ -219,7 +232,7 @@ func TestFindBestMovePlus5(t *testing.T) {
 	bonusTimes := [64]uint32{}
 	bonusTimes[2] = 5
 
-	testFindBestMove(t, layout, states, bonusTimes, 0, 0, 1, 0)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 0, 0, 1, 0)
 }
 
 func TestFindBestMovePlus10(t *testing.T) {
@@ -243,7 +256,7 @@ func TestFindBestMovePlus10(t *testing.T) {
 	bonusTimes[2] = 5
 	bonusTimes[7*8+3] = 10
 
-	testFindBestMove(t, layout, states, bonusTimes, 0, 7, 1, 7)
+	testFindBestMove(t, layout, states, bonusTimes, 0, 0, 7, 1, 7)
 }
 
 func TestFindBestMovePlus10Deep(t *testing.T) {
@@ -251,15 +264,14 @@ func TestFindBestMovePlus10Deep(t *testing.T) {
 		0, 1, 0, 0, 1, 2, 3, 4,
 		2, 3, 4, 1, 2, 3, 4, 3,
 		1, 0, 0, 4, 1, 2, 3, 4,
-		2, 3, 4, 1, 2, 3, 4, 1,
+		2, 5, 6, 1, 2, 3, 4, 1,
 		0, 2, 3, 4, 1, 2, 3, 4,
-		2, 3, 4, 1, 0, 0, 4, 0,
-		1, 2, 3, 4, 1, 2, 3, 4,
+		5, 6, 6, 1, 0, 0, 4, 0,
+		1, 6, 3, 4, 1, 2, 3, 4,
 		0, 1, 0, 0, 2, 3, 4, 1,
 	}
 
 	states := [64]GemState{}
-	states[7*8+2] = StateFire
 	states[5*8+5] = StateStar
 	states[1*8+6] = StateHypercube
 
@@ -267,7 +279,7 @@ func TestFindBestMovePlus10Deep(t *testing.T) {
 	bonusTimes[2] = 5
 	bonusTimes[2*8+1] = 10
 
-	testFindBestMove(t, layout, states, bonusTimes, 0, 7, 1, 7)
+	testFindBestMove(t, layout, states, bonusTimes, 2, 0, 7, 1, 7)
 }
 
 func TestFindBestMove6MatchDeep(t *testing.T) {
@@ -279,7 +291,7 @@ func TestFindBestMove6MatchDeep(t *testing.T) {
 		1, 2, 3, 4, 1, 2, 3, 0,
 		2, 3, 4, 1, 6, 6, 4, 6,
 		1, 2, 3, 4, 1, 2, 3, 4,
-		0, 1, 0, 0, 2, 3, 4, 3,
+		6, 1, 6, 6, 2, 3, 4, 3,
 	}
 
 	states := [64]GemState{}
@@ -289,5 +301,5 @@ func TestFindBestMove6MatchDeep(t *testing.T) {
 
 	bonusTimes := [64]uint32{}
 
-	testFindBestMove(t, layout, states, bonusTimes, 6, 1, 6, 2)
+	testFindBestMove(t, layout, states, bonusTimes, 2, 6, 1, 6, 2)
 }

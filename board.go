@@ -42,7 +42,6 @@ type Gem struct {
 	Color         GemColor
 	State         GemState
 	BonusTimeAmnt uint32
-	IsMatched     bool
 }
 
 type Board struct {
