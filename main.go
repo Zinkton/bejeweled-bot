@@ -78,6 +78,8 @@ func (g *Game) syncGeometry() {
 }
 
 func (g *Game) drawDebugView(screen *ebiten.Image) {
+	screen.Fill(color.RGBA{22, 22, 26, 255})
+
 	// 1. Draw Blazing Speed Tint (Background)
 	if g.Board.IsBlazingSpeed {
 		bounds := screen.Bounds()
