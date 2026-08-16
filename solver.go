@@ -6,15 +6,15 @@ import (
 )
 
 // GetSortedMoves evaluates all possible moves on the board and sorts them by score.
-func GetSortedMoves(b *Board, depth int) []Move {
+func GetSortedMoves(b *Board, depth int, isBot bool) []Move {
 	// Mark matched gems to not interfere with them
 	clearMatchedGems(&b.State)
 
-	legalMoves := b.GenerateLegalMoves()
+	legalMoves := b.GenerateLegalMoves(isBot)
 
 	// Deep search
 	for i, legalMove := range legalMoves {
-		legalMoves[i].Score = (depth+1)*b.Push(legalMove) + getBestMoveScore(b, depth)
+		legalMoves[i].Score = (depth+1)*b.Push(legalMove, isBot) + getBestMoveScore(b, depth, isBot)
 		b.Pop()
 	}
 
@@ -25,17 +25,18 @@ func GetSortedMoves(b *Board, depth int) []Move {
 	return legalMoves
 }
 
-func getBestMoveScore(b *Board, depthLeft int) int {
+func getBestMoveScore(b *Board, depthLeft int, isBot bool) int {
 	// No change after last move, leaf
 	if b.StateHistory[len(b.StateHistory)-1] == b.State || depthLeft == 0 {
 		return 0
 	}
 
-	legalMoves := b.GenerateLegalMoves()
+	legalMoves := b.GenerateLegalMoves(isBot)
 
 	bestScore := -100
 	for _, legalMove := range legalMoves {
-		score := depthLeft*b.Push(legalMove) + getBestMoveScore(b, depthLeft-1)
+		score := depthLeft*b.Push(legalMove, isBot) + getBestMoveScore(b, depthLeft-1, isBot)
+
 		if score > bestScore {
 			bestScore = score
 		}
@@ -45,15 +46,21 @@ func getBestMoveScore(b *Board, depthLeft int) int {
 	return bestScore
 }
 
-func (b *Board) Push(move Move) int {
+func (b *Board) Push(move Move, isBot bool) int {
 	b.StateHistory = append(b.StateHistory, b.State)
 
 	// Empty move, just settle
-	if move.Index1 == move.Index2 {
+	if isBot && move.Index1 == move.Index2 {
 		return b.Settle() - 5
 	}
 
-	return b.evaluateSwap(move.Index1, move.Index2, &b.State)
+	score := b.evaluateSwap(move.Index1, move.Index2, &b.State)
+
+	if !isBot {
+		score += b.Settle()
+	}
+
+	return score
 }
 
 func (b *Board) Pop() {
@@ -319,7 +326,7 @@ func (b *Board) Settle() int {
 }
 
 // GenerateLegalMoves scans the board and returns a list of all valid moves.
-func (b *Board) GenerateLegalMoves() []Move {
+func (b *Board) GenerateLegalMoves(isBot bool) []Move {
 	var legalMoves []Move
 
 	// Iterate through all 64 spaces on the 8x8 grid
@@ -330,7 +337,7 @@ func (b *Board) GenerateLegalMoves() []Move {
 			// 1. Try swapping Right (if we are not on the right edge)
 			if x < 7 {
 				rightIdx := idx + 1
-				if b.isLegalMove(idx, rightIdx, b.State) {
+				if b.IsLegalMove(idx, rightIdx, b.State) {
 					legalMoves = append(legalMoves, Move{
 						Index1: idx,
 						Index2: rightIdx,
@@ -341,7 +348,7 @@ func (b *Board) GenerateLegalMoves() []Move {
 			// 2. Try swapping Down (if we are not on the bottom edge)
 			if y < 7 {
 				downIdx := idx + 8
-				if b.isLegalMove(idx, downIdx, b.State) {
+				if b.IsLegalMove(idx, downIdx, b.State) {
 					legalMoves = append(legalMoves, Move{
 						Index1: idx,
 						Index2: downIdx,
@@ -351,8 +358,10 @@ func (b *Board) GenerateLegalMoves() []Move {
 		}
 	}
 
-	// Prefer not waiting
-	legalMoves = append(legalMoves, Move{Score: -5})
+	if isBot {
+		// Prefer not waiting
+		legalMoves = append(legalMoves, Move{Score: -5})
+	}
 
 	return legalMoves
 }
@@ -470,7 +479,7 @@ func checkLineMatch(grid *[64]Gem, idx int) (MatchType, []int) {
 }
 
 // Evaluate and execute the swap
-func (b *Board) isLegalMove(idx1, idx2 int, state [64]Gem) bool {
+func (b *Board) IsLegalMove(idx1, idx2 int, state [64]Gem) bool {
 	gem1 := state[idx1]
 	gem2 := state[idx2]
 

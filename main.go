@@ -157,7 +157,15 @@ func (g *Game) updateBestMove() {
 		return
 	}
 
-	moves := GetSortedMoves(&g.Board, 2)
+	if !g.BotEnabled && g.CachedBestMove != nil {
+		clearMatchedGems(&g.Board.State)
+		g.Board.Settle()
+		if g.Board.IsLegalMove(g.CachedBestMove.Index1, g.CachedBestMove.Index2, g.Board.State) {
+			return
+		}
+	}
+
+	moves := GetSortedMoves(&g.Board, 2, g.BotEnabled)
 
 	if len(moves) > 0 {
 		best := moves[0]
