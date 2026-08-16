@@ -175,7 +175,6 @@ func (b *Board) Settle() int {
 			break
 		}
 
-		var destroyedGemIdxs []int
 		var events []settleEvent
 		var matchScore int
 
@@ -201,9 +200,6 @@ func (b *Board) Settle() int {
 
 		// 4. Horizontal Spans
 		for _, h := range horizSpans {
-			for col := h.start; col <= h.end; col++ {
-				destroyedGemIdxs = append(destroyedGemIdxs, h.fixed*8+col)
-			}
 			if h.used {
 				continue
 			}
@@ -232,9 +228,6 @@ func (b *Board) Settle() int {
 
 		// 5. Vertical Spans
 		for _, v := range vertSpans {
-			for row := v.start; row <= v.end; row++ {
-				destroyedGemIdxs = append(destroyedGemIdxs, row*8+v.fixed)
-			}
 			if v.used {
 				continue
 			}
@@ -261,18 +254,47 @@ func (b *Board) Settle() int {
 			})
 		}
 
-		// Accumulate match scores
+		// 6. Spawn special gems and build the protected list BEFORE cascade
+		var protectedIdxs []int
 		for _, ev := range events {
 			matchScore += max(0, int(ev.matchType)-1) * 10
+			if ev.special != StateNormal {
+				b.State[ev.centerIdx] = Gem{Color: ev.color, State: ev.special}
+				protectedIdxs = append(protectedIdxs, ev.centerIdx)
+			}
 		}
 
-		// 6. Blazing Speed explosions (evaluated for all match centers)
+		// 7. Collect destroyed gem indices, skipping protected spawn tiles
+		var destroyedGemIdxs []int
+
+		for _, h := range horizSpans {
+			for col := h.start; col <= h.end; col++ {
+				idx := h.fixed*8 + col
+				if !slices.Contains(protectedIdxs, idx) {
+					destroyedGemIdxs = append(destroyedGemIdxs, idx)
+				}
+			}
+		}
+
+		for _, v := range vertSpans {
+			for row := v.start; row <= v.end; row++ {
+				idx := row*8 + v.fixed
+				if !slices.Contains(protectedIdxs, idx) {
+					destroyedGemIdxs = append(destroyedGemIdxs, idx)
+				}
+			}
+		}
+
+		// 8. Blazing Speed explosions (radial - ignore protected tiles)
 		var colorTriggers []GemColor
 		if b.IsBlazingSpeed {
 			for _, ev := range events {
 				expIds := getExplosionIdxs(&b.State, ev.centerIdx)
-				destroyedGemIdxs = append(destroyedGemIdxs, expIds...)
 				for _, expIdx := range expIds {
+					if slices.Contains(protectedIdxs, expIdx) {
+						continue
+					}
+					destroyedGemIdxs = append(destroyedGemIdxs, expIdx)
 					if b.State[expIdx].State == StateHypercube {
 						colorTriggers = append(colorTriggers, ev.color)
 					}
@@ -280,7 +302,6 @@ func (b *Board) Settle() int {
 			}
 		}
 
-		// Deduplicate
 		slices.Sort(destroyedGemIdxs)
 		destroyedGemIdxs = slices.Compact(destroyedGemIdxs)
 
@@ -289,16 +310,9 @@ func (b *Board) Settle() int {
 			colorTriggers = slices.Compact(colorTriggers)
 		}
 
-		// 7. Cascade resolution
-		cascadeScore := evaluateCascade(destroyedGemIdxs, &b.State, colorTriggers)
+		// 9. Cascade resolution with flame protection active
+		cascadeScore := evaluateCascade(destroyedGemIdxs, &b.State, colorTriggers, protectedIdxs)
 		totalScore += matchScore + cascadeScore
-
-		// 8. Spawn special gems
-		for _, ev := range events {
-			if ev.special != StateNormal {
-				b.State[ev.centerIdx] = Gem{Color: ev.color, State: ev.special}
-			}
-		}
 	}
 
 	return totalScore
@@ -484,6 +498,21 @@ func (b *Board) isLegalMove(idx1, idx2 int, state [64]Gem) bool {
 	return false
 }
 
+func getCreatedSpecialState(matchType MatchType) GemState {
+	switch matchType {
+	case MatchType4:
+		return StateFire
+	case MatchTypeL:
+		return StateStar
+	case MatchType5:
+		return StateHypercube
+	case MatchType6:
+		return StateSupernova
+	default:
+		return StateNormal
+	}
+}
+
 // Evaluate and execute the swap
 func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	gem1 := state[idx1]
@@ -501,17 +530,15 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 
 	if gem1.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx1)
-		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem2.Color})
+		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem2.Color}, nil)
 		applyGravity(state)
-
 		return score
 	}
 
 	if gem2.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx2)
-		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem1.Color})
+		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem1.Color}, nil)
 		applyGravity(state)
-
 		return score
 	}
 
@@ -524,31 +551,53 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 
 	state[idx1], state[idx2] = state[idx2], state[idx1]
 
-	// Check if swapping them creates a match at either of their new positions
 	matchType1, matchIdxs1 := checkLineMatch(state, idx1)
 	matchType2, matchIdxs2 := checkLineMatch(state, idx2)
 
 	match1Color := state[idx1].Color
 	match2Color := state[idx2].Color
 
+	special1 := getCreatedSpecialState(matchType1)
+	special2 := getCreatedSpecialState(matchType2)
+
+	// 1. Spawn newly created special gems and mark them as protected from radial blasts
+	var protectedIdxs []int
+	if special1 != StateNormal {
+		state[idx1] = Gem{Color: match1Color, State: special1}
+		protectedIdxs = append(protectedIdxs, idx1)
+	}
+	if special2 != StateNormal {
+		state[idx2] = Gem{Color: match2Color, State: special2}
+		protectedIdxs = append(protectedIdxs, idx2)
+	}
+
 	swapScore := max(0, int(matchType1)-1)*10 + max(0, int(matchType2)-1)*10
+
+	// 2. Queue gems to be destroyed (excluding newly created special gem spawn tiles)
 	for _, match1Idx := range matchIdxs1 {
-		destroyedGemIdxs = append(destroyedGemIdxs, match1Idx)
+		if !slices.Contains(protectedIdxs, match1Idx) {
+			destroyedGemIdxs = append(destroyedGemIdxs, match1Idx)
+		}
 	}
 
 	for _, match2Idx := range matchIdxs2 {
-		destroyedGemIdxs = append(destroyedGemIdxs, match2Idx)
+		if !slices.Contains(protectedIdxs, match2Idx) {
+			destroyedGemIdxs = append(destroyedGemIdxs, match2Idx)
+		}
 	}
 
 	var colorTriggers []GemColor
 	isSpecialGemActivated := false
+
+	// Blazing Speed explosions: radial blasts that must NOT destroy protected gems
 	if matchType1 != MatchTypeNone && b.IsBlazingSpeed {
 		isSpecialGemActivated = true
-		match1ExplosionIds := getExplosionIdxs(state, idx1)
-		destroyedGemIdxs = append(destroyedGemIdxs, match1ExplosionIds...)
-
-		for _, match1ExplosionIdx := range match1ExplosionIds {
-			if state[match1ExplosionIdx].State == StateHypercube {
+		for _, expIdx := range getExplosionIdxs(state, idx1) {
+			if slices.Contains(protectedIdxs, expIdx) {
+				continue
+			}
+			destroyedGemIdxs = append(destroyedGemIdxs, expIdx)
+			if state[expIdx].State == StateHypercube {
 				colorTriggers = append(colorTriggers, state[idx1].Color)
 			}
 		}
@@ -556,17 +605,19 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 
 	if matchType2 != MatchTypeNone && b.IsBlazingSpeed {
 		isSpecialGemActivated = true
-		match2ExplosionIds := getExplosionIdxs(state, idx2)
-		destroyedGemIdxs = append(destroyedGemIdxs, match2ExplosionIds...)
-
-		for _, match2ExplosionIdx := range match2ExplosionIds {
-			if state[match2ExplosionIdx].State == StateHypercube {
+		for _, expIdx := range getExplosionIdxs(state, idx2) {
+			if slices.Contains(protectedIdxs, expIdx) {
+				continue
+			}
+			destroyedGemIdxs = append(destroyedGemIdxs, expIdx)
+			if state[expIdx].State == StateHypercube {
 				colorTriggers = append(colorTriggers, state[idx2].Color)
 			}
 		}
 	}
 
-	if len(destroyedGemIdxs) == 0 {
+	if len(destroyedGemIdxs) == 0 && len(protectedIdxs) == 0 {
+		state[idx1], state[idx2] = state[idx2], state[idx1]
 		return 0
 	}
 
@@ -576,30 +627,8 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	slices.Sort(colorTriggers)
 	colorTriggers = slices.Compact(colorTriggers)
 
-	swapScore += evaluateCascade(destroyedGemIdxs, state, colorTriggers)
-
-	// After the cascade, the newly created special gems survive in bejeweled 3 I believe
-	switch matchType1 {
-	case MatchType4:
-		state[idx1] = Gem{Color: match1Color, State: StateFire}
-	case MatchTypeL:
-		state[idx1] = Gem{Color: match1Color, State: StateStar}
-	case MatchType5:
-		state[idx1] = Gem{Color: match1Color, State: StateHypercube}
-	case MatchType6:
-		state[idx1] = Gem{Color: match1Color, State: StateSupernova}
-	}
-
-	switch matchType2 {
-	case MatchType4:
-		state[idx2] = Gem{Color: match2Color, State: StateFire}
-	case MatchTypeL:
-		state[idx2] = Gem{Color: match2Color, State: StateStar}
-	case MatchType5:
-		state[idx2] = Gem{Color: match2Color, State: StateHypercube}
-	case MatchType6:
-		state[idx2] = Gem{Color: match2Color, State: StateSupernova}
-	}
+	// 3. Evaluate cascade while passing protected indices
+	swapScore += evaluateCascade(destroyedGemIdxs, state, colorTriggers, protectedIdxs)
 
 	specialCountAfter := 0
 	for i := range state {
@@ -713,11 +742,10 @@ type CascadeEvent struct {
 	TriggerColors []GemColor
 }
 
-func evaluateCascade(initialIdxs []int, currentState *[64]Gem, initialTriggers []GemColor) int {
+func evaluateCascade(initialIdxs []int, currentState *[64]Gem, initialTriggers []GemColor, protectedIdxs []int) int {
 	score := 0
 	var queue []CascadeEvent
 
-	// 1. Seed the initial wave into the queue
 	for _, idx := range initialIdxs {
 		queue = append(queue, CascadeEvent{
 			Idx:           idx,
@@ -725,32 +753,30 @@ func evaluateCascade(initialIdxs []int, currentState *[64]Gem, initialTriggers [
 		})
 	}
 
-	// 2. Process the queue until it's empty (Breadth-First)
 	for len(queue) > 0 {
-		// Pop the front event off the queue
 		event := queue[0]
 		queue = queue[1:]
 
 		idx := event.Idx
 
-		// If another explosion in this wave already cleared it, skip
 		if currentState[idx].IsEmpty() {
 			continue
 		}
 
-		// Score it
 		score++
 		score += int(currentState[idx].BonusTimeAmnt) * 1000
 
-		// Save the color of THIS gem, because if this gem causes a
-		// chain reaction, its color becomes the new trigger color.
 		thisGemColor := currentState[idx].Color
 		var nextIdxs []int
 
-		// Determine blast radius
 		switch currentState[idx].State {
 		case StateFire:
-			nextIdxs = getExplosionIdxs(currentState, idx)
+			// Radial 3x3 blast: ignores protected gems
+			for _, expIdx := range getExplosionIdxs(currentState, idx) {
+				if !slices.Contains(protectedIdxs, expIdx) {
+					nextIdxs = append(nextIdxs, expIdx)
+				}
+			}
 
 		case StateHypercube:
 			for j := range 64 {
@@ -760,9 +786,11 @@ func evaluateCascade(initialIdxs []int, currentState *[64]Gem, initialTriggers [
 			}
 
 		case StateStar:
+			// Beam blasts pierce and trigger protected gems
 			nextIdxs = getStarIdxs(currentState, idx)
 
 		case StateSupernova:
+			// Supernova beams pierce and trigger protected gems
 			explosionIdxs := getExplosionIdxs(currentState, idx)
 			for _, expIdx := range explosionIdxs {
 				nextIdxs = append(nextIdxs, getStarIdxs(currentState, expIdx)...)
@@ -771,12 +799,9 @@ func evaluateCascade(initialIdxs []int, currentState *[64]Gem, initialTriggers [
 			nextIdxs = slices.Compact(nextIdxs)
 		}
 
-		// 3. Clear the gem IMMEDIATELY so it doesn't get re-queued by overlapping blasts
 		currentState[idx].Clear()
 
-		// 4. Queue up all the gems caught in the blast for the next wave
 		for _, nextIdx := range nextIdxs {
-			// Minor optimization: don't bother queuing empty spaces
 			if !currentState[nextIdx].IsEmpty() {
 				queue = append(queue, CascadeEvent{
 					Idx:           nextIdx,
