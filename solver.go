@@ -14,7 +14,7 @@ func GetSortedMoves(b *Board, depth int) []Move {
 
 	// Deep search
 	for i, legalMove := range legalMoves {
-		legalMoves[i].Score = b.Push(legalMove) + getBestMoveScore(b, depth)
+		legalMoves[i].Score = (depth+1)*b.Push(legalMove) + getBestMoveScore(b, depth)
 		b.Pop()
 	}
 
@@ -35,7 +35,7 @@ func getBestMoveScore(b *Board, depthLeft int) int {
 
 	bestScore := -100
 	for _, legalMove := range legalMoves {
-		score := b.Push(legalMove) + getBestMoveScore(b, depthLeft-1)
+		score := depthLeft*b.Push(legalMove) + getBestMoveScore(b, depthLeft-1)
 		if score > bestScore {
 			bestScore = score
 		}

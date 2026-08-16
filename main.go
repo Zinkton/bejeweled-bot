@@ -154,7 +154,7 @@ func (g *Game) parseBoard() {
 	g.Board.IsBlazingSpeed = (blazing > 0)
 
 	// Timer check (state + D68)
-	timer, _ := ReadUint32(state + 0xD68)
+	timer, _ := ReadUint32(state + 0xE38)
 	if timer != g.LastTimer {
 		g.IsActive = true
 		g.LastTimer = timer
