@@ -12,23 +12,32 @@ import (
 
 // --- Enums ---
 
-type Game struct {
-	Board        Board
-	ProcessFound bool
-	IsActive     bool
-	LastTimer    uint32
+type ViewMode int
 
+const (
+	ModeDebug ViewMode = iota
+	ModeHintOverlay
+)
+
+type Game struct {
+	Board              Board
+	ProcessFound       bool
+	IsActive           bool
+	LastTimer          uint32
 	CachedBestMove     *Move
 	LastEvaluatedBoard [64]Gem
 	HasCalculatedMove  bool
+	Mode               ViewMode
+	Geom               *WindowBounds
+	BotEnabled         bool
+	ScreenWidth        int
+	ScreenHeight       int
 }
 
 // --- Main Loop ---
 
 func (g *Game) Update() error {
-	// If process isn't found, try to attach to it every frame until it works
 	if !g.ProcessFound {
-		// Note: Check task manager. Sometimes it is "bejeweled3.exe"
 		if AttachToProcess("bejeweled3.exe") {
 			g.ProcessFound = true
 			fmt.Println("Process found! Base address:", fmt.Sprintf("%X", baseAddress))
@@ -36,16 +45,39 @@ func (g *Game) Update() error {
 		return nil
 	}
 
-	// 1. Read latest state from memory
+	g.syncGeometry()
+
 	g.parseBoard()
 
-	// 2. Refresh / cache the best move
 	g.updateBestMove()
 
 	return nil
 }
 
-func (g *Game) Draw(screen *ebiten.Image) {
+// syncGeometry checks if Bejeweled has moved/resized and updates coordinates
+func (g *Game) syncGeometry() {
+	geom, err := GetGameGeometry()
+	if err != nil {
+		return
+	}
+
+	// Detect if position or dimensions changed
+	if g.Geom == nil ||
+		geom.ScreenX != g.Geom.ScreenX ||
+		geom.ScreenY != g.Geom.ScreenY ||
+		geom.ClientWidth != g.Geom.ClientWidth ||
+		geom.ClientHeight != g.Geom.ClientHeight {
+
+		g.Geom = geom
+
+		// If overlay mode is active, re-snap Ebiten's window to match
+		if g.Mode == ModeHintOverlay {
+			snapEbitenWindow(geom.ScreenX, geom.ScreenY, geom.ClientWidth, geom.ClientHeight)
+		}
+	}
+}
+
+func (g *Game) drawDebugView(screen *ebiten.Image) {
 	// 1. Draw Blazing Speed Tint (Background)
 	if g.Board.IsBlazingSpeed {
 		bounds := screen.Bounds()
@@ -101,18 +133,28 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 }
 
-func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
+func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
+	if g.Mode == ModeHintOverlay {
+		return outsideWidth, outsideHeight
+	}
+
 	return 640, 480
 }
 
+func (g *Game) Draw(screen *ebiten.Image) {
+	switch g.Mode {
+	case ModeDebug:
+		g.drawDebugView(screen)
+	case ModeHintOverlay:
+		g.drawHintOverlay(screen)
+	}
+}
+
 func (g *Game) updateBestMove() {
-	// 1. If the board hasn't changed since last calculation and we already have a move,
-	// reuse the cached move immediately (0 CPU cost)
 	if g.HasCalculatedMove && g.Board.State == g.LastEvaluatedBoard || !g.IsActive {
 		return
 	}
 
-	// 2. Board state has changed! Run the solver
 	moves := GetSortedMoves(&g.Board, 2)
 
 	if len(moves) > 0 {
@@ -122,7 +164,6 @@ func (g *Game) updateBestMove() {
 		g.CachedBestMove = nil
 	}
 
-	// 3. Update the tracking state and cache
 	g.LastEvaluatedBoard = g.Board.State
 	g.HasCalculatedMove = true
 }
@@ -276,21 +317,32 @@ func getGemColor(c GemColor) color.Color {
 func main() {
 	geom, err := GetGameGeometry()
 	if err != nil {
-		log.Fatal("Could not locate Bejeweled 3 window:", err)
+		fmt.Println("[!] Could not auto-detect Bejeweled 3 window at launch. Will retry on toggle.")
+	}
+
+	game := &Game{
+		Mode: ModeDebug,
+		Geom: geom,
 	}
 
 	bot := &BotController{
-		IsEnabled: true,
+		IsEnabled: false,
 		Geom:      geom,
 	}
 
-	game := &Game{}
+	// Start bot execution worker & hotkeys
 	game.StartBotWorker(bot)
+	game.StartHotkeyListener(bot)
 
 	ebiten.SetWindowSize(640, 480)
-	ebiten.SetWindowTitle("Bejeweled Bot - Debug Window")
+	ebiten.SetWindowTitle(OverlayWindowTitle)
 
-	if err := ebiten.RunGame(game); err != nil {
+	// ScreenTransparent enables the transparent framebuffer for overlay mode
+	options := &ebiten.RunGameOptions{
+		ScreenTransparent: true,
+	}
+
+	if err := ebiten.RunGameWithOptions(game, options); err != nil {
 		log.Fatal(err)
 	}
 }
