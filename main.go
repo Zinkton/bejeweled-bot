@@ -157,6 +157,8 @@ func (g *Game) updateBestMove() {
 		return
 	}
 
+	g.LastEvaluatedBoard = g.Board.State
+
 	if !g.BotEnabled && g.CachedBestMove != nil {
 		clearMatchedGems(&g.Board.State)
 		g.Board.Settle()
@@ -174,7 +176,6 @@ func (g *Game) updateBestMove() {
 		g.CachedBestMove = nil
 	}
 
-	g.LastEvaluatedBoard = g.Board.State
 	g.HasCalculatedMove = true
 }
 
