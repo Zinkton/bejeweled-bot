@@ -10,11 +10,11 @@ func GetSortedMoves(b *Board, depth int, isBot bool) []Move {
 	// Mark matched gems to not interfere with them
 	clearMatchedGems(&b.State)
 
-	legalMoves := b.GenerateLegalMoves(isBot)
+	legalMoves := b.GenerateLegalMoves()
 
 	// Deep search
 	for i, legalMove := range legalMoves {
-		legalMoves[i].Score = (depth+1)*b.Push(legalMove, isBot) + getBestMoveScore(b, depth, isBot)
+		legalMoves[i].Score = b.Push(legalMove, isBot)
 		b.Pop()
 	}
 
@@ -25,40 +25,10 @@ func GetSortedMoves(b *Board, depth int, isBot bool) []Move {
 	return legalMoves
 }
 
-func getBestMoveScore(b *Board, depthLeft int, isBot bool) int {
-	// No change after last move, leaf
-	if b.StateHistory[len(b.StateHistory)-1] == b.State || depthLeft == 0 {
-		return 0
-	}
-
-	legalMoves := b.GenerateLegalMoves(isBot)
-
-	bestScore := -100
-	for _, legalMove := range legalMoves {
-		score := depthLeft*b.Push(legalMove, isBot) + getBestMoveScore(b, depthLeft-1, isBot)
-
-		if score > bestScore {
-			bestScore = score
-		}
-		b.Pop()
-	}
-
-	return bestScore
-}
-
 func (b *Board) Push(move Move, isBot bool) int {
 	b.StateHistory = append(b.StateHistory, b.State)
 
-	// Empty move, just settle
-	if isBot && move.Index1 == move.Index2 {
-		return b.Settle() - 5
-	}
-
 	score := b.evaluateSwap(move.Index1, move.Index2, &b.State)
-
-	if !isBot {
-		score += b.Settle()
-	}
 
 	return score
 }
@@ -326,7 +296,7 @@ func (b *Board) Settle() int {
 }
 
 // GenerateLegalMoves scans the board and returns a list of all valid moves.
-func (b *Board) GenerateLegalMoves(isBot bool) []Move {
+func (b *Board) GenerateLegalMoves() []Move {
 	var legalMoves []Move
 
 	// Iterate through all 64 spaces on the 8x8 grid
@@ -356,11 +326,6 @@ func (b *Board) GenerateLegalMoves(isBot bool) []Move {
 				}
 			}
 		}
-	}
-
-	if isBot {
-		// Prefer not waiting
-		legalMoves = append(legalMoves, Move{Score: -5})
 	}
 
 	return legalMoves
@@ -540,14 +505,12 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	if gem1.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx1)
 		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem2.Color}, nil)
-		applyGravity(state)
 		return score
 	}
 
 	if gem2.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx2)
 		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem1.Color}, nil)
-		applyGravity(state)
 		return score
 	}
 
@@ -596,11 +559,8 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	}
 
 	var colorTriggers []GemColor
-	isSpecialGemActivated := false
-
 	// Blazing Speed explosions: radial blasts that must NOT destroy protected gems
 	if matchType1 != MatchTypeNone && b.IsBlazingSpeed {
-		isSpecialGemActivated = true
 		for _, expIdx := range getExplosionIdxs(state, idx1) {
 			if slices.Contains(protectedIdxs, expIdx) {
 				continue
@@ -613,7 +573,6 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	}
 
 	if matchType2 != MatchTypeNone && b.IsBlazingSpeed {
-		isSpecialGemActivated = true
 		for _, expIdx := range getExplosionIdxs(state, idx2) {
 			if slices.Contains(protectedIdxs, expIdx) {
 				continue
@@ -644,10 +603,6 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 		if state[i].State != StateNormal {
 			specialCountAfter++
 		}
-	}
-
-	if isSpecialGemActivated || specialCountAfter < specialCountBefore {
-		applyGravity(state)
 	}
 
 	return int(swapScore)

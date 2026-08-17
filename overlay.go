@@ -2,12 +2,10 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"syscall"
 	"unsafe"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 const (
@@ -100,54 +98,5 @@ func (g *Game) ToggleMode() {
 }
 
 func (g *Game) drawHintOverlay(screen *ebiten.Image) {
-	bounds := screen.Bounds()
-	w := float32(bounds.Dx())
-	h := float32(bounds.Dy())
-
-	if !g.IsActive || g.CachedBestMove == nil {
-		return
-	}
-
-	move := g.CachedBestMove
-	if move.Index1 == move.Index2 {
-		return
-	}
-
-	// 1. Grid ratios
-	tlNormX := float32(0.3651)
-	tlNormY := float32(0.1584)
-	brNormX := float32(0.9260)
-	brNormY := float32(0.9118)
-
-	anchorX := tlNormX * w
-	anchorY := tlNormY * h
-	brX := brNormX * w
-	brY := brNormY * h
-
-	stepX := (brX - anchorX) / 7.0
-	stepY := (brY - anchorY) / 7.0
-
-	tileSize := stepX * 0.85
-	offset := tileSize / 2
-
-	// 2. Positions
-	r1, c1 := IndexToRowCol(move.Index1)
-	srcX := anchorX + float32(c1)*stepX - offset
-	srcY := anchorY + float32(r1)*stepY - offset
-
-	r2, c2 := IndexToRowCol(move.Index2)
-	dstX := anchorX + float32(c2)*stepX - offset
-	dstY := anchorY + float32(r2)*stepY - offset
-
-	// 3. Unified Highlight Styling (Crisp Gold / Yellow)
-	fillColor := color.NRGBA{R: 255, G: 215, B: 0, A: 130}
-	borderColor := color.RGBA{R: 255, G: 230, B: 50, A: 255}
-
-	// Draw Source
-	vector.FillRect(screen, srcX, srcY, tileSize, tileSize, fillColor, false)
-	drawOutline(screen, srcX, srcY, tileSize, 3, borderColor)
-
-	// Draw Target
-	vector.FillRect(screen, dstX, dstY, tileSize, tileSize, fillColor, false)
-	drawOutline(screen, dstX, dstY, tileSize, 3, borderColor)
+	return
 }

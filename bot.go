@@ -17,14 +17,17 @@ func (g *Game) StartBotWorker(bot *BotController) {
 			}
 
 			// 3. Grab current cached best move
-			move := g.CachedBestMove
-			if move == nil || move.Index1 == move.Index2 || !g.IsActive {
+			moves := g.CachedBestMove
+			if len(moves) == 0 || !g.IsActive {
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}
 
 			// 4. Execute the move
-			NativeExecuteSwap(g.Geom, move.Index1, move.Index2)
+			for _, move := range moves {
+				NativeExecuteSwap(g.Geom, move.Index1, move.Index2)
+			}
+
 		}
 	}()
 }

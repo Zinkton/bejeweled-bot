@@ -24,7 +24,7 @@ type Game struct {
 	ProcessFound       bool
 	IsActive           bool
 	LastTimer          uint32
-	CachedBestMove     *Move
+	CachedBestMove     []Move
 	LastEvaluatedBoard [64]Gem
 	HasCalculatedMove  bool
 	Mode               ViewMode
@@ -153,30 +153,21 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func (g *Game) updateBestMove() {
-	if g.HasCalculatedMove && g.Board.State == g.LastEvaluatedBoard || !g.IsActive {
+	if !g.IsActive {
 		return
 	}
 
-	g.LastEvaluatedBoard = g.Board.State
-
-	if !g.BotEnabled && g.CachedBestMove != nil {
-		clearMatchedGems(&g.Board.State)
-		g.Board.Settle()
-		if g.Board.IsLegalMove(g.CachedBestMove.Index1, g.CachedBestMove.Index2, g.Board.State) {
-			return
-		}
+	ogState := g.Board.State
+	var result []Move
+	moves := GetSortedMoves(&g.Board, 0, true)
+	for len(moves) > 0 {
+		g.Board.Push(moves[0], true)
+		result = append(result, moves[0])
+		moves = GetSortedMoves(&g.Board, 0, true)
 	}
 
-	moves := GetSortedMoves(&g.Board, 2, g.BotEnabled)
-
-	if len(moves) > 0 {
-		best := moves[0]
-		g.CachedBestMove = &best
-	} else {
-		g.CachedBestMove = nil
-	}
-
-	g.HasCalculatedMove = true
+	g.CachedBestMove = result
+	g.Board.State = ogState
 }
 
 // --- Memory parsing ---
