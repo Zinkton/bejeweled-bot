@@ -5,16 +5,39 @@ import (
 	"slices"
 )
 
-// GetSortedMoves evaluates all possible moves on the board and sorts them by score.
-func GetSortedMoves(b *Board, depth int, isBot bool) []Move {
-	// Mark matched gems to not interfere with them
+func GetBestShallowMoves(b *Board) []Move {
+	var result []Move
+
+	clearMatchedGems(&b.State)
+
+	legalMoves := b.GenerateLegalMoves(false)
+
+	for len(legalMoves) > 0 {
+		for i, legalMove := range legalMoves {
+			legalMoves[i].Score = b.Push(legalMove, true, true)
+			b.Pop()
+		}
+
+		slices.SortFunc(legalMoves, func(a, b Move) int {
+			return cmp.Compare(b.Score, a.Score)
+		})
+
+		result = append(result, legalMoves[0])
+		b.Push(legalMoves[0], true, true)
+		legalMoves = b.GenerateLegalMoves(false)
+	}
+
+	return result
+}
+
+func GetBestDeepMove(b *Board, depth int, isBot bool) Move {
 	clearMatchedGems(&b.State)
 
 	legalMoves := b.GenerateLegalMoves(isBot)
 
 	// Deep search
 	for i, legalMove := range legalMoves {
-		legalMoves[i].Score = (depth+1)*b.Push(legalMove, isBot) + getBestMoveScore(b, depth, isBot)
+		legalMoves[i].Score = (depth+1)*b.Push(legalMove, isBot, false) + getBestMoveScore(b, depth, isBot)
 		b.Pop()
 	}
 
@@ -22,7 +45,13 @@ func GetSortedMoves(b *Board, depth int, isBot bool) []Move {
 		return cmp.Compare(b.Score, a.Score)
 	})
 
-	return legalMoves
+	var bestMove Move
+
+	if len(legalMoves) > 0 {
+		bestMove = legalMoves[0]
+	}
+
+	return bestMove
 }
 
 func getBestMoveScore(b *Board, depthLeft int, isBot bool) int {
@@ -35,7 +64,7 @@ func getBestMoveScore(b *Board, depthLeft int, isBot bool) int {
 
 	bestScore := -100
 	for _, legalMove := range legalMoves {
-		score := depthLeft*b.Push(legalMove, isBot) + getBestMoveScore(b, depthLeft-1, isBot)
+		score := depthLeft*b.Push(legalMove, isBot, false) + getBestMoveScore(b, depthLeft-1, isBot)
 
 		if score > bestScore {
 			bestScore = score
@@ -46,7 +75,7 @@ func getBestMoveScore(b *Board, depthLeft int, isBot bool) int {
 	return bestScore
 }
 
-func (b *Board) Push(move Move, isBot bool) int {
+func (b *Board) Push(move Move, isBot bool, isFastMode bool) int {
 	b.StateHistory = append(b.StateHistory, b.State)
 
 	// Empty move, just settle
@@ -54,7 +83,7 @@ func (b *Board) Push(move Move, isBot bool) int {
 		return b.Settle() - 5
 	}
 
-	score := b.evaluateSwap(move.Index1, move.Index2, &b.State)
+	score := b.evaluateSwap(move.Index1, move.Index2, &b.State, isFastMode)
 
 	if !isBot {
 		score += b.Settle()
@@ -326,7 +355,7 @@ func (b *Board) Settle() int {
 }
 
 // GenerateLegalMoves scans the board and returns a list of all valid moves.
-func (b *Board) GenerateLegalMoves(isBot bool) []Move {
+func (b *Board) GenerateLegalMoves(withEmptyMove bool) []Move {
 	var legalMoves []Move
 
 	// Iterate through all 64 spaces on the 8x8 grid
@@ -358,7 +387,7 @@ func (b *Board) GenerateLegalMoves(isBot bool) []Move {
 		}
 	}
 
-	if isBot {
+	if withEmptyMove {
 		// Prefer not waiting
 		legalMoves = append(legalMoves, Move{Score: -5})
 	}
@@ -523,7 +552,7 @@ func getCreatedSpecialState(matchType MatchType) GemState {
 }
 
 // Evaluate and execute the swap
-func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
+func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem, skipGravity bool) int {
 	gem1 := state[idx1]
 	gem2 := state[idx2]
 
@@ -540,14 +569,22 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 	if gem1.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx1)
 		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem2.Color}, nil)
-		applyGravity(state)
+
+		if !skipGravity {
+			applyGravity(state)
+		}
+
 		return score
 	}
 
 	if gem2.State == StateHypercube {
 		destroyedGemIdxs = append(destroyedGemIdxs, idx2)
 		score := evaluateCascade(destroyedGemIdxs, state, []GemColor{gem1.Color}, nil)
-		applyGravity(state)
+
+		if !skipGravity {
+			applyGravity(state)
+		}
+
 		return score
 	}
 
@@ -646,7 +683,7 @@ func (b *Board) evaluateSwap(idx1, idx2 int, state *[64]Gem) int {
 		}
 	}
 
-	if isSpecialGemActivated || specialCountAfter < specialCountBefore {
+	if !skipGravity && (isSpecialGemActivated || specialCountAfter < specialCountBefore) {
 		applyGravity(state)
 	}
 

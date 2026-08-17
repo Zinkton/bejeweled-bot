@@ -25,11 +25,13 @@ type Game struct {
 	IsActive           bool
 	LastTimer          uint32
 	CachedBestMove     *Move
+	CachedFastMoves    *[]Move
 	LastEvaluatedBoard [64]Gem
 	HasCalculatedMove  bool
 	Mode               ViewMode
 	Geom               *WindowBounds
 	BotEnabled         bool
+	FastBotMode        bool
 	ScreenWidth        int
 	ScreenHeight       int
 }
@@ -167,15 +169,17 @@ func (g *Game) updateBestMove() {
 		}
 	}
 
-	moves := GetSortedMoves(&g.Board, 2, g.BotEnabled)
-
-	if len(moves) > 0 {
-		best := moves[0]
-		g.CachedBestMove = &best
-	} else {
+	if g.BotEnabled && g.FastBotMode {
 		g.CachedBestMove = nil
+		bestFastMoves := GetBestShallowMoves(&g.Board)
+		g.CachedFastMoves = &bestFastMoves
+	} else {
+		g.CachedFastMoves = nil
+		bestMove := GetBestDeepMove(&g.Board, 2, g.BotEnabled)
+		g.CachedBestMove = &bestMove
 	}
 
+	g.Board.State = g.LastEvaluatedBoard
 	g.HasCalculatedMove = true
 }
 

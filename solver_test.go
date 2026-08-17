@@ -21,7 +21,7 @@ func buildTestBoard(layout [64]int, states [64]GemState, bonusTimes [64]uint32) 
 func testFindBestMove(t *testing.T, layout [64]int, states [64]GemState, bonusTimes [64]uint32, depth, x1, y1, x2, y2 int) {
 	board := buildTestBoard(layout, states, bonusTimes)
 
-	bestMove := GetSortedMoves(&board, depth, true)[0]
+	bestMove := GetBestDeepMove(&board, depth, true)
 	// PrintState(&board.State)
 	// score := 0
 	// score += board.Push(Move{Index1: 8 + 6, Index2: 2*8 + 6})
